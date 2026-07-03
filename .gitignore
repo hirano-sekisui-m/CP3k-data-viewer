@@ -5,3 +5,5 @@ data\parsed-data\*
 # メモ
 AI-chat\*.txt
 
+# テスト実行用
+test\*.py
