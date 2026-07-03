@@ -1,0 +1,7 @@
+# データ関連
+data\raw-data\processed*
+data\parsed-data\*
+
+# メモ
+AI-chat\*.txt
+
