@@ -9,3 +9,11 @@ AI-chat/*.txt
 
 # テスト実行用
 test/*.py
+
+src/01_correlation_bias.ipynb
+src/02_timecourse_viewer.ipynb
+src/common/analysis_utils.py
+
+# キャッシュ関連
+__pycache__/
+src/common/__pycache__
