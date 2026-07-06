@@ -99,13 +99,20 @@ def find_latest_csv(
 ):
     data_dir = Path(data_dir)
 
+    if not data_dir.is_absolute():
+        data_dir = (
+            Path(__file__).resolve().parents[2]
+            / data_dir
+        )
+
     csv_files = list(
         data_dir.glob("*.csv")
     )
 
     if len(csv_files) == 0:
         raise FileNotFoundError(
-            f"No CSV found: {data_dir}"
+            f"No CSV found: {data_dir}. "
+            f"Place a .csv file under the raw-data directory first."
         )
 
     csv_files.sort(
@@ -500,20 +507,167 @@ def _move_original_csv(csv_path):
     )
 
 # ==========================================================
-# TEST
+# TEST / ENTRY POINT
 # ==========================================================
 
-#if __name__ == "__main__":
+if __name__ == "__main__":
+    import sys
 
-#    csv_file = find_latest_csv(
-#        "../../data/raw-data"
-#    )
+    project_root = Path(__file__).resolve().parents[2]
 
-#    measurement_df, profile_df, metadata = (
-#        process_csv(csv_file)
-#    )
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 
-#    print("measurement:", measurement_df.shape)
-#    print("profile:", profile_df.shape)
+    raw_data_dir = project_root / "data" / "raw-data"
 
-#    print("Done.")
+    try:
+        csv_file = find_latest_csv(raw_data_dir)
+    except FileNotFoundError as exc:
+        print(exc)
+        raise SystemExit(1)
+
+    print(f"CSV : {csv_file}")
+
+    measurement_df, profile_df, metadata = process_csv(csv_file)
+
+    print()
+    print("measurement")
+    print(measurement_df.shape)
+    print()
+    print("profile")
+    print(profile_df.shape)
+    print()
+    print("metadata")
+    print(list(metadata.keys()))
+    print()
+    print("Done")
+
+
+# ==========================================================
+# Parquet/metadata helper for analysis
+# ==========================================================
+
+def _try_parse_json_obj(val):
+    """文字列化されたJSONや辞書オブジェクトから値を取り出すヘルパー"""
+
+    if val is None:
+        return None
+
+    if isinstance(val, dict):
+        return val
+
+    if isinstance(val, str):
+
+        s = val.strip()
+
+        # JSONっぽければパースを試みる
+        if s.startswith("{") and s.endswith("}"):
+            try:
+                return json.loads(s)
+            except Exception:
+                return None
+
+        return s
+
+    return None
+
+
+def extract_sample_id(measurement_df, preferred_keys=None):
+    """
+    `measurement.parquet` から検体IDを抽出して Series を返す。
+
+    優先的に探すキーは日本語/英語の候補を順に試す。
+    - measurement_df に直接 `検体ID`/`SampleID`/`ID` などの列があればそれを使う
+    - `属性` 列が辞書または JSON 文字列を含む場合は内部のキーを探す
+    - 見つからなければ先頭列を ID として扱う
+
+    戻り値は文字列 Series（index は元 DF に合わせる）
+    """
+
+    if preferred_keys is None:
+        preferred_keys = [
+            "検体ID",
+            "SampleID",
+            "ID",
+            "検体ﾊﾞｰｺｰﾄﾞ",
+            "属性",
+            "SID",
+            "依頼No."
+        ]
+
+    # 1) 直接存在する列を優先
+    for key in preferred_keys:
+        if key in measurement_df.columns:
+            series = measurement_df[key]
+
+            # attributes のように辞書/JSON を含む列なら内部から候補キーを探す
+            if key == "属性":
+                parsed = series.map(_try_parse_json_obj)
+
+                # もし辞書が含まれていれば内部キーを探す
+                if parsed.dropna().apply(lambda x: isinstance(x, dict)).any():
+                    # 内部でよく使われるキーを試す
+                    inner_keys = ["検体ID", "SampleID", "ID"]
+
+                    for ik in inner_keys:
+                        try:
+                            extracted = parsed.map(lambda d: d.get(ik) if isinstance(d, dict) else None)
+                        except Exception:
+                            extracted = None
+
+                        if extracted is not None and extracted.dropna().shape[0] > 0:
+                            return extracted.astype(str)
+
+                # 辞書でなければそのまま文字列化して返す
+                return series.astype(str).str.strip()
+
+            # その他の列はそのまま返す
+            return series.astype(str).str.strip()
+
+    # 2) 属性列がない場合、先頭列を ID として使う
+    first_col = measurement_df.columns[0]
+    return measurement_df[first_col].astype(str).str.strip()
+
+
+def detect_prescription_columns(measurement_df, metadata):
+    """
+    `metadata.json` の `measurement_items` と `measurement_df` の列名の交差を返す。
+
+    見つからなければ、列名が `処方` で始まる列を優先的に返す（後方互換）
+    """
+
+    items = metadata.get("measurement_items", []) if metadata else []
+
+    # 交差
+    common = [c for c in measurement_df.columns if c in items]
+
+    if len(common) > 0:
+        return common
+
+    # フォールバック：列名が '処方' を含む/始まるもの
+    fallback = [c for c in measurement_df.columns if str(c).startswith("処方") or "処方" in str(c)]
+
+    return fallback
+
+
+def load_parsed_for_analysis(parsed_dir, sample_id_col_name="SampleID"):
+    """
+    parsed ディレクトリ（例: data/parsed-data/260623_F12CSV_data）を読み込み、
+    ・`measurement_df` に `sample_id_col_name` 列を追加（検体ID）
+    ・検出された処方列のリストを返す
+
+    Returns
+    -------
+    measurement_df, profile_df, metadata, prescription_columns
+    """
+
+    measurement_df, profile_df, metadata = load_parsed_data(parsed_dir)
+
+    sample_series = extract_sample_id(measurement_df)
+
+    measurement_df = measurement_df.copy()
+    measurement_df[sample_id_col_name] = sample_series.values
+
+    pres_cols = detect_prescription_columns(measurement_df, metadata)
+
+    return measurement_df, profile_df, metadata, pres_cols
