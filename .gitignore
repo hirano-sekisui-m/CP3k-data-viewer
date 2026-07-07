@@ -1,7 +1,7 @@
 # データ関連
 data/raw-data/*.csv
 data/raw-data/processed/*.csv
-data/parsed-data/
+# data/parsed-data/
 data/export/
 
 # メモ
