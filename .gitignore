@@ -2,7 +2,7 @@
 data/raw-data/*.csv
 data/raw-data/processed/*.csv
 # data/parsed-data/
-data/export/
+data/export/*.png
 
 # メモ
 AI-chat/
