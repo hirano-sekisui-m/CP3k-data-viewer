@@ -1,0 +1,23 @@
+{
+  "measurement_items": [
+    "TAT207",
+    "TAT1"
+  ],
+  "measurement_units": {
+    "TAT207": "ng/mL",
+    "TAT1": "ng/mL"
+  },
+  "item_mapping": {
+    "37": "TAT207",
+    "41": "TAT1"
+  },
+  "source_csv": "20260706_123646_260630_F12_土浦スクリーニングNo1~81.csv",
+  "nan": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "none",
+        "z_MAD": 0.18312480990848565
+      }
+    }
+  }
+}
