@@ -504,22 +504,22 @@ def compute_residuals(x, y, a, b):
     y = np.asarray(y, float)
     return y - (a * x + b)
 
-def classify_outlier_level(abs_z):
+def classify_outlier_level(abs_z, thresh=3.5):
     if not np.isfinite(abs_z):
         return "not_evaluable"
 
-    if abs_z >= 5.0:
+    if abs_z >= thresh * (5.0/3.5):
         return "strong_candidate"
 
-    if abs_z >= 3.5:
+    if abs_z >= thresh:
         return "candidate"
 
-    if abs_z >= 2.5:
+    if abs_z >= thresh * (2.5/3.5):
         return "mild_candidate"
 
     return "none"
 
-def compute_pair_sample_metrics(df, id_col, group_col, xcol, ycol, a, b):
+def compute_pair_sample_metrics(df, id_col, group_col, xcol, ycol, a, b, z_thresh=3.5):
     has_group = group_col and group_col in df.columns
 
     cols = [id_col, xcol, ycol] + ([group_col] if has_group else [])
@@ -571,7 +571,7 @@ def compute_pair_sample_metrics(df, id_col, group_col, xcol, ycol, a, b):
         sub["z_MAD"] = np.nan
 
     sub["abs_z_MAD"] = np.abs(sub["z_MAD"])
-    sub["outlier_level"] = sub["abs_z_MAD"].apply(classify_outlier_level)
+    sub["outlier_level"] = sub["abs_z_MAD"].apply(lambda z: classify_outlier_level(z, thresh=z_thresh))
 
     sub["outlier_basis"] = "回帰残差 y-(slope*x+intercept) をMADで標準化"
     sub["outlier_note"] = "乖離候補であり、自動除外ではない"
@@ -715,7 +715,7 @@ def plot_suite(
             s=outlier_s,
             alpha=0.95,
             facecolors="none",
-            edgecolors="red",
+            edgecolors=external_colors[is_flagged] if external_colors is not None else "red",
             linewidths=outlier_lw
         )
 
@@ -843,7 +843,7 @@ def plot_suite(
             s=outlier_s,
             alpha=0.95,
             facecolors="none",
-            edgecolors="red",
+            edgecolors=external_colors[is_flagged] if external_colors is not None else "red",
             linewidths=outlier_lw
         )
 
@@ -895,7 +895,7 @@ def plot_suite(
             s=outlier_s,
             alpha=0.95,
             facecolors="none",
-            edgecolors="red",
+            edgecolors=external_colors[is_flagged] if external_colors is not None else "red",
             linewidths=outlier_lw
         )
 
