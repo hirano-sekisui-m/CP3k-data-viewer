@@ -1,11 +1,12 @@
 # データ関連
 data/raw-data/*.csv
 data/raw-data/processed/*.csv
-data/parsed-data/*_data/*.parquet
-data/parsed-data/*_data/*.json
+# data/parsed-data/
+data/export/*.png
+data/export/20260709_132812_260708 (Calibratin~乖離検体まで) F12 CSV_data
 
 # メモ
-AI-chat/*.txt
+AI-chat/
 
 # テスト実行用
 test/*.py
@@ -13,7 +14,12 @@ test/*.py
 src/01_correlation_bias.ipynb
 src/02_timecourse_viewer.ipynb
 src/common/analysis_utils.py
+src/*.xlsx
+notebooks/
 
 # キャッシュ関連
 __pycache__/
 src/common/__pycache__
+
+# 古いスクリプトなど
+src/old

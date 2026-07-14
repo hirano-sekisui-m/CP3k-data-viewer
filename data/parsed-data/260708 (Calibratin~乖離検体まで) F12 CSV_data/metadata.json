@@ -1,0 +1,48 @@
+{
+  "measurement_items": [
+    "TAT207",
+    "TAT1",
+    "TAT2",
+    "TAT3",
+    "TAT4",
+    "TAT5",
+    "TAT6",
+    "TAT7",
+    "TAT8",
+    "TAT9",
+    "TAT10",
+    "TAT11",
+    "TAT12"
+  ],
+  "measurement_units": {
+    "TAT207": "ng/mL",
+    "TAT1": "ng/mL",
+    "TAT2": "ng/mL",
+    "TAT3": "ng/mL",
+    "TAT4": "ng/mL",
+    "TAT5": "ng/mL",
+    "TAT6": "ng/mL",
+    "TAT7": "ng/mL",
+    "TAT8": "ng/mL",
+    "TAT9": "ng/mL",
+    "TAT10": "ng/mL",
+    "TAT11": "ng/mL",
+    "TAT12": "ng/mL"
+  },
+  "item_mapping": {
+    "41": "TAT1",
+    "42": "TAT2",
+    "43": "TAT3",
+    "44": "TAT4",
+    "45": "TAT5",
+    "46": "TAT6",
+    "47": "TAT7",
+    "48": "TAT8",
+    "49": "TAT9",
+    "50": "TAT10",
+    "51": "TAT11",
+    "37": "TAT207",
+    "52": "TAT12"
+  },
+  "source_csv": "260708 (Calibratin~乖離検体まで) F12 CSV_data.csv"
+}
