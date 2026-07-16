@@ -519,7 +519,7 @@ def classify_outlier_level(abs_z, thresh=3.5):
 
     return "none"
 
-def compute_pair_sample_metrics(df, id_col, group_col, xcol, ycol, a, b, z_thresh=3.5):
+def compute_pair_sample_metrics(df, id_col, group_col, xcol, ycol, a, b, z_thresh=3.5, outlier_mode="zMAD", pct_thresh=15.0, abs_thresh=8.0):
     has_group = group_col and group_col in df.columns
 
     cols = [id_col, xcol, ycol] + ([group_col] if has_group else [])
@@ -571,9 +571,36 @@ def compute_pair_sample_metrics(df, id_col, group_col, xcol, ycol, a, b, z_thres
         sub["z_MAD"] = np.nan
 
     sub["abs_z_MAD"] = np.abs(sub["z_MAD"])
-    sub["outlier_level"] = sub["abs_z_MAD"].apply(lambda z: classify_outlier_level(z, thresh=z_thresh))
 
-    sub["outlier_basis"] = "回帰残差 y-(slope*x+intercept) をMADで標準化"
+    if outlier_mode == "zMAD":
+        sub["outlier_level"] = sub["abs_z_MAD"].apply(lambda z: classify_outlier_level(z, thresh=z_thresh))
+        sub["outlier_basis"] = "回帰残差 y-(slope*x+intercept) をMADで標準化"
+    elif outlier_mode == "error":
+        levels = []
+        for x_val, y_val in zip(x, y):
+            if pd.isna(x_val) or pd.isna(y_val):
+                levels.append("not_evaluable")
+            else:
+                diff = abs(y_val - x_val)
+                if x_val >= abs_thresh:
+                    eff_thresh = x_val * (pct_thresh / 100.0)
+                else:
+                    eff_thresh = abs_thresh * (pct_thresh / 100.0)
+
+                if diff >= eff_thresh * (5.0/3.5):
+                    levels.append("strong_candidate")
+                elif diff >= eff_thresh:
+                    levels.append("candidate")
+                elif diff >= eff_thresh * (2.5/3.5):
+                    levels.append("mild_candidate")
+                else:
+                    levels.append("normal")
+        sub["outlier_level"] = levels
+        sub["outlier_basis"] = f"許容誤差: X>={abs_thresh} かつ |Y-X|/X >= {pct_thresh}%"
+    else:
+        sub["outlier_level"] = "normal"
+        sub["outlier_basis"] = "不明なモード"
+
     sub["outlier_note"] = "乖離候補であり、自動除外ではない"
 
     return sub
@@ -587,6 +614,9 @@ def pick_outliers_table(
     a,
     b,
     z_thresh=3.5,
+    outlier_mode="zMAD",
+    pct_thresh=15.0,
+    abs_thresh=8.0,
     top_n=200
 ):
     sub = compute_pair_sample_metrics(
@@ -596,16 +626,29 @@ def pick_outliers_table(
         xcol=xcol,
         ycol=ycol,
         a=a,
-        b=b
+        b=b,
+        z_thresh=z_thresh,
+        outlier_mode=outlier_mode,
+        pct_thresh=pct_thresh,
+        abs_thresh=abs_thresh
     )
 
-    if sub.empty or "abs_z_MAD" not in sub.columns:
+    if sub.empty:
         return sub, sub
 
-    flagged = sub[
-        np.isfinite(sub["abs_z_MAD"])
-        & (sub["abs_z_MAD"] >= z_thresh)
-    ].copy()
+    if outlier_mode == "zMAD":
+        if "abs_z_MAD" not in sub.columns:
+            return sub, sub
+        flagged = sub[
+            np.isfinite(sub["abs_z_MAD"])
+            & (sub["abs_z_MAD"] >= z_thresh)
+        ].copy()
+    elif outlier_mode == "error":
+        if "outlier_level" not in sub.columns:
+            return sub, sub
+        flagged = sub[sub["outlier_level"].isin(["strong_candidate", "candidate", "mild_candidate"])].copy()
+    else:
+        flagged = sub.iloc[0:0].copy()
 
     flagged = flagged.sort_values("abs_z_MAD", ascending=False).head(top_n)
 
@@ -639,11 +682,13 @@ def plot_suite(
     fig_width=16,
     fig_height=10,
     dpi=150,
-    external_colors=None
+    external_colors=None,
+    outlier_mode="zMAD",
+    pct_thresh=15.0,
+    abs_thresh=8.0
 ):
     if fit_info is None:
         fit_info = {}
-    if external_colors is not None: external_colors = np.asarray(external_colors)
     if external_colors is not None: external_colors = np.asarray(external_colors)
 
 
@@ -665,7 +710,10 @@ def plot_suite(
         a=a,
         b=b,
         z_thresh=z_thresh,
-        top_n=200
+        outlier_mode=outlier_mode,
+        pct_thresh=pct_thresh,
+        abs_thresh=abs_thresh,
+        top_n=outlier_label_top
     )
 
     x = pd.to_numeric(sub[xcol], errors="coerce").astype(float).to_numpy()
@@ -944,9 +992,16 @@ def plot_suite(
     if np.isfinite(sd):
         txt += f"SD={sd:.6g}\nLoA=[{loa_lo:.6g}, {loa_hi:.6g}]\n"
 
+    if outlier_mode == "zMAD":
+        outlier_txt = f"|z_MAD|≥{z_thresh}\n"
+    elif outlier_mode == "error":
+        outlier_txt = f"許容誤差: X>={abs_thresh} かつ |Y-X|/X >= {pct_thresh}%\n"
+    else:
+        outlier_txt = ""
+
     txt += (
         f"\n【乖離候補】\n"
-        f"|z_MAD|≥{z_thresh}\n"
+        f"{outlier_txt}"
         f"乖離候補数={n_flagged}\n"
         f"※乖離候補は自動除外していません\n"
         f"※r/slope/interceptは解析対象全データで算出\n"
