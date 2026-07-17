@@ -237,6 +237,8 @@ if st.session_state["df"] is not None:
                 for method in methods:
                     for xcol, ycol in pairs:
                         df_pair = apply_value_range_filter(df, xcol, ycol, use_range=use_range_ck, lo=range_min_txt, hi=range_max_txt)
+                        if id_col in df_pair.columns:
+                            df_pair[id_col] = df_pair[id_col].replace("nan", None)
                         sub = df_pair[[xcol, ycol]].dropna()
                         if len(sub) < 2: continue
 
@@ -275,7 +277,7 @@ if st.session_state["df"] is not None:
                             figures.append((fig, method, xcol, ycol))
 
                         summary_rows.append({"regression": method, "X": xcol, "Y": ycol, "n": len(x), "r": r,
-                                             "slope": a, "intercept": b, "BA_bias": bias, "n_outliers": len(flagged) if flagged is not None else 0})
+                                             "slope": a, "intercept": b, "BA_bias": bias if bias is not None and not np.isnan(bias) else None, "n_outliers": len(flagged) if flagged is not None else 0})
                         if not metrics_df.empty: sample_metric_tables.append(metrics_df.assign(regression=method, X=xcol, Y=ycol))
                         if flagged is not None and not flagged.empty: outlier_tables.append(flagged.assign(regression=method, X=xcol, Y=ycol))
 
@@ -293,6 +295,7 @@ if st.session_state["df"] is not None:
                 st.success(f"解析完了! {len(summary_rows)}件のペアを処理しました。内容を確認後、必要であれば『Excel出力』タブへ進んでください。")
 
         if st.session_state.get("analysis_results") and show_py_ck:
+            st.markdown("### 解析結果のグラフ")
             shown = 0
             for fig, method, xcol, ycol in st.session_state["analysis_results"]["figures"]:
                 if shown < max_show_val:
@@ -332,7 +335,10 @@ if st.session_state["df"] is not None:
                         wb.save(output_xlsx)
 
                         if img_paths:
-                            insert_images_into_excel(input_xlsx=output_xlsx, output_xlsx=output_xlsx, image_paths=img_paths, plot_sheet=SHEET_PLOTS)
+                            try:
+                                insert_images_into_excel(input_xlsx=output_xlsx, output_xlsx=output_xlsx, image_paths=img_paths, plot_sheet=SHEET_PLOTS)
+                            except Exception as e:
+                                st.warning(f"Plots could not be inserted into Excel: {e}")
 
                         if res["summary_rows"]: write_df_to_sheet(output_xlsx, pd.DataFrame(res["summary_rows"]), SHEET_SUMMARY)
                         if res["sample_metric_tables"]: write_df_to_sheet(output_xlsx, pd.concat(res["sample_metric_tables"]), SHEET_SAMPLE_METRICS)
