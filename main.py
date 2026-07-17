@@ -272,9 +272,6 @@ if st.session_state["df"] is not None:
                         )
 
                         if fig:
-                            if show_py_ck and shown < max_show_val:
-                                st.pyplot(fig)
-                                shown += 1
                             figures.append((fig, method, xcol, ycol))
 
                         summary_rows.append({"regression": method, "X": xcol, "Y": ycol, "n": len(x), "r": r,
@@ -294,6 +291,15 @@ if st.session_state["df"] is not None:
                 st.session_state["ref_outlier_map"] = ref_outlier_map
 
                 st.success(f"解析完了! {len(summary_rows)}件のペアを処理しました。内容を確認後、必要であれば『Excel出力』タブへ進んでください。")
+
+        if st.session_state.get("analysis_results") and show_py_ck:
+            shown = 0
+            for fig, method, xcol, ycol in st.session_state["analysis_results"]["figures"]:
+                if shown < max_show_val:
+                    st.pyplot(fig)
+                    shown += 1
+                else:
+                    break
 
     # ----------------------------------------------------
     # TAB 2: Excel出力
