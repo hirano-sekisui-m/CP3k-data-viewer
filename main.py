@@ -236,50 +236,57 @@ if st.session_state["df"] is not None:
 
                 for method in methods:
                     for xcol, ycol in pairs:
-                        df_pair = apply_value_range_filter(df, xcol, ycol, use_range=use_range_ck, lo=range_min_txt, hi=range_max_txt)
-                        if id_col in df_pair.columns:
-                            df_pair[id_col] = df_pair[id_col].replace("nan", None)
-                        sub = df_pair[[xcol, ycol]].dropna()
-                        if len(sub) < 2: continue
+                        try:
+                            df_pair = apply_value_range_filter(df, xcol, ycol, use_range=use_range_ck, lo=range_min_txt, hi=range_max_txt)
+                            if id_col in df_pair.columns:
+                                df_pair[id_col] = df_pair[id_col].replace("nan", None)
+                            sub = df_pair[[xcol, ycol]].dropna()
+                            if len(sub) < 2:
+                                st.warning(f"警告: {xcol} vs {ycol} の有効データが2件未満のためスキップします。")
+                                continue
 
-                        x, y = sub[xcol].astype(float).values, sub[ycol].astype(float).values
-                        r = pearson_r(x, y)
-                        a, b, fit_info = regression_fit_info(x, y, method=method, deming_lambda=lam)
+                            x, y = sub[xcol].astype(float).values, sub[ycol].astype(float).values
+                            r = pearson_r(x, y)
+                            a, b, fit_info = regression_fit_info(x, y, method=method, deming_lambda=lam)
 
-                        pair_key = f"{xcol}_vs_{ycol}"
-                        metrics_df = compute_pair_sample_metrics(df_pair, id_col, group_col, xcol, ycol, a, b, z_thresh=z_thresh)
+                            pair_key = f"{xcol}_vs_{ycol}"
+                            metrics_df = compute_pair_sample_metrics(df_pair, id_col, group_col, xcol, ycol, a, b, z_thresh=z_thresh)
 
-                        color_list = []
-                        for _, row in metrics_df.iterrows():
-                            sid = str(row[id_col])
-                            sample_meta = run_metadata.setdefault(sid, {})
-                            outliers_meta = sample_meta.setdefault("outliers", {})
+                            color_list = []
+                            for _, row in metrics_df.iterrows():
+                                sid = str(row[id_col])
+                                sample_meta = run_metadata.setdefault(sid, {})
+                                outliers_meta = sample_meta.setdefault("outliers", {})
 
-                            z_mad = row.get("z_MAD", np.nan)
-                            level = classify_outlier_level(abs(z_mad), thresh=z_thresh) if np.isfinite(z_mad) else "none"
-                            outliers_meta[pair_key] = {"level": level, "z_MAD": float(z_mad) if np.isfinite(z_mad) else None}
+                                z_mad = row.get("z_MAD", np.nan)
+                                level = classify_outlier_level(abs(z_mad), thresh=z_thresh) if np.isfinite(z_mad) else "none"
+                                outliers_meta[pair_key] = {"level": level, "z_MAD": float(z_mad) if np.isfinite(z_mad) else None}
 
-                            target_level = ref_outlier_map.get(sid, "none") if ref_outlier_map else level
+                                target_level = ref_outlier_map.get(sid, "none") if ref_outlier_map else level
 
-                            if target_level == "strong_candidate": color_list.append("red")
-                            elif target_level == "candidate": color_list.append("orange")
-                            elif target_level == "mild_candidate": color_list.append("yellow")
-                            else: color_list.append("#1f77b4")
+                                if target_level == "strong_candidate": color_list.append("red")
+                                elif target_level == "candidate": color_list.append("orange")
+                                elif target_level == "mild_candidate": color_list.append("yellow")
+                                else: color_list.append("#1f77b4")
 
-                        fig, used_sub, flagged, bias, loa = plot_suite(
+                            fig, used_sub, flagged, bias, loa = plot_suite(
                             df=df_pair, id_col=id_col, group_col=group_col, xcol=xcol, ycol=ycol,
                             method=method, lam=lam, a=a, b=b, r=r, fit_info=fit_info,
                             z_thresh=z_thresh, outlier_label_top=label_top_val,
                             fig_width=16, fig_height=10, dpi=100, external_colors=color_list
-                        )
+                            )
 
-                        if fig:
-                            figures.append((fig, method, xcol, ycol))
+                            if fig:
+                                figures.append((fig, method, xcol, ycol))
+                            else:
+                                st.warning(f"警告: {xcol} vs {ycol} の描画データが空になりました。")
 
-                        summary_rows.append({"regression": method, "X": xcol, "Y": ycol, "n": len(x), "r": r,
-                                             "slope": a, "intercept": b, "BA_bias": bias if bias is not None and not np.isnan(bias) else None, "n_outliers": len(flagged) if flagged is not None else 0})
-                        if not metrics_df.empty: sample_metric_tables.append(metrics_df.assign(regression=method, X=xcol, Y=ycol))
-                        if flagged is not None and not flagged.empty: outlier_tables.append(flagged.assign(regression=method, X=xcol, Y=ycol))
+                            summary_rows.append({"regression": method, "X": xcol, "Y": ycol, "n": len(x), "r": r,
+                                                 "slope": a, "intercept": b, "BA_bias": bias if bias is not None and not np.isnan(bias) else None, "n_outliers": len(flagged) if flagged is not None else 0})
+                            if not metrics_df.empty: sample_metric_tables.append(metrics_df.assign(regression=method, X=xcol, Y=ycol))
+                            if flagged is not None and not flagged.empty: outlier_tables.append(flagged.assign(regression=method, X=xcol, Y=ycol))
+                        except Exception as e:
+                            st.error(f"{xcol} vs {ycol} の解析中にエラーが発生しました: {e}")
 
                 st.session_state["analysis_results"] = {
                     "run_metadata": run_metadata,
