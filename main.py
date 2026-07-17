@@ -239,7 +239,8 @@ if st.session_state["df"] is not None:
                         try:
                             df_pair = apply_value_range_filter(df, xcol, ycol, use_range=use_range_ck, lo=range_min_txt, hi=range_max_txt)
                             if id_col in df_pair.columns:
-                                df_pair[id_col] = df_pair[id_col].replace("nan", None)
+                                df_pair[id_col] = df_pair[id_col].astype(str).replace(["nan", "None", "<NA>", "NaN"], "Unknown")
+                                df_pair[id_col] = df_pair[id_col].fillna("Unknown")
                             sub = df_pair[[xcol, ycol]].dropna()
                             if len(sub) < 2:
                                 st.warning(f"警告: {xcol} vs {ycol} の有効データが2件未満のためスキップします。")
@@ -276,10 +277,20 @@ if st.session_state["df"] is not None:
                             fig_width=16, fig_height=10, dpi=100, external_colors=color_list
                             )
 
-                            if fig:
+                            if fig is not None:
                                 figures.append((fig, method, xcol, ycol))
                             else:
-                                st.warning(f"警告: {xcol} vs {ycol} の描画データが空になりました。")
+                                # Fallback generation if plot_suite unexpectedly returned None
+                                import matplotlib.pyplot as plt
+                                fallback_fig, fallback_ax = plt.subplots(figsize=(8, 6))
+                                fallback_ax.scatter(x, y, alpha=0.7)
+                                fallback_ax.set_title(f"Fallback Plot: {xcol} vs {ycol}")
+                                fallback_ax.set_xlabel(xcol)
+                                fallback_ax.set_ylabel(ycol)
+                                figures.append((fallback_fig, method, xcol, ycol))
+                                if bias is None: bias = float(np.nanmean(y - x))
+                                if flagged is None: flagged = pd.DataFrame()
+                                st.warning(f"警告: {xcol} vs {ycol} の描画処理で予期せぬ空データが返されたため、フォールバック描画を行いました。")
 
                             summary_rows.append({"regression": method, "X": xcol, "Y": ycol, "n": len(x), "r": r,
                                                  "slope": a, "intercept": b, "BA_bias": bias if bias is not None and not np.isnan(bias) else None, "n_outliers": len(flagged) if flagged is not None else 0})
