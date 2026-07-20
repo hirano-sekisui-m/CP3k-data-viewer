@@ -192,7 +192,7 @@ if st.session_state["df"] is not None:
         with col9:
             show_py_ck = st.checkbox("画面上に表示", value=True)
         with col10:
-            max_show_val = st.slider("表示上限", min_value=0, max_value=30, value=6, step=1)
+            max_show_val = st.slider("表示上限", min_value=0, max_value=30, value=30, step=1)
 
         if st.button("②解析実行", type="primary", key="run_analysis"):
             with st.spinner("解析実行中..."):
