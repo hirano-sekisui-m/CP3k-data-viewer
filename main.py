@@ -169,7 +169,14 @@ if st.session_state["df"] is not None:
             all_reg_ck = st.checkbox("全回帰法で出力", value=False)
             deming_lambda_val = st.number_input("λ(Deming)", value=1.0)
         with col3:
-            z_thresh_val = st.slider("乖離z(MAD)", min_value=1.5, max_value=8.0, value=3.5, step=0.1)
+            outlier_mode_dd = st.selectbox("乖離判定基準", options=["zMAD", "error"], format_func=lambda x: "zMAD (標準化残差)" if x == "zMAD" else "error (臨床的許容誤差)")
+            if outlier_mode_dd == "zMAD":
+                z_thresh_val = st.slider("乖離z(MAD)", min_value=1.5, max_value=8.0, value=3.5, step=0.1)
+                pct_thresh_val, abs_thresh_val = 10.0, 2.0
+            else:
+                pct_thresh_val = st.number_input("許容誤差(%)", value=10.0)
+                abs_thresh_val = st.number_input("許容誤差(絶対値)", value=2.0)
+                z_thresh_val = 3.5
             label_top_val = st.slider("ラベル数", min_value=0, max_value=30, value=8, step=1)
 
         st.markdown("**範囲絞り設定**")
@@ -233,7 +240,10 @@ if st.session_state["df"] is not None:
                     if len(sub_ref) >= 2:
                         xr, yr = sub_ref[ref_x].astype(float).values, sub_ref[ref_y].astype(float).values
                         ar, br, _ = regression_fit_info(xr, yr, method=reg_method, deming_lambda=lam)
-                        metrics_ref = compute_pair_sample_metrics(df_ref, id_col, group_col, ref_x, ref_y, ar, br, z_thresh=z_thresh)
+                        try:
+                            metrics_ref = compute_pair_sample_metrics(df_ref, id_col, group_col, ref_x, ref_y, ar, br, z_thresh=z_thresh_val, outlier_mode=outlier_mode_dd, pct_thresh=pct_thresh_val, abs_thresh=abs_thresh_val)
+                        except TypeError:
+                            metrics_ref = compute_pair_sample_metrics(df_ref, id_col, group_col, ref_x, ref_y, ar, br, z_thresh=z_thresh_val)
                         for _, row in metrics_ref.iterrows():
                             ref_outlier_map[str(row[id_col])] = row["outlier_level"]
 
@@ -254,7 +264,10 @@ if st.session_state["df"] is not None:
                             a, b, fit_info = regression_fit_info(x, y, method=method, deming_lambda=lam)
 
                             pair_key = f"{xcol}_vs_{ycol}"
-                            metrics_df = compute_pair_sample_metrics(df_pair, id_col, group_col, xcol, ycol, a, b, z_thresh=z_thresh)
+                            try:
+                                metrics_df = compute_pair_sample_metrics(df_pair, id_col, group_col, xcol, ycol, a, b, z_thresh=z_thresh_val, outlier_mode=outlier_mode_dd, pct_thresh=pct_thresh_val, abs_thresh=abs_thresh_val)
+                            except TypeError:
+                                metrics_df = compute_pair_sample_metrics(df_pair, id_col, group_col, xcol, ycol, a, b, z_thresh=z_thresh_val)
 
                             color_list = []
                             for _, row in metrics_df.iterrows():
@@ -262,9 +275,13 @@ if st.session_state["df"] is not None:
                                 sample_meta = run_metadata.setdefault(sid, {})
                                 outliers_meta = sample_meta.setdefault("outliers", {})
 
-                                z_mad = row.get("z_MAD", np.nan)
-                                level = classify_outlier_level(abs(z_mad), thresh=z_thresh) if np.isfinite(z_mad) else "none"
-                                outliers_meta[pair_key] = {"level": level, "z_MAD": float(z_mad) if np.isfinite(z_mad) else None}
+                                if outlier_mode_dd == "error":
+                                    level = row.get("outlier_level", "none")
+                                    outliers_meta[pair_key] = {"level": level, "abs_residual": float(row.get("abs_residual", np.nan)), "rel_diff_yx_pct": float(row.get("rel_diff_yx_pct", np.nan))}
+                                else:
+                                    z_mad = row.get("z_MAD", np.nan)
+                                    level = classify_outlier_level(abs(z_mad), thresh=z_thresh_val) if np.isfinite(z_mad) else "none"
+                                    outliers_meta[pair_key] = {"level": level, "z_MAD": float(z_mad) if np.isfinite(z_mad) else None}
 
                                 target_level = ref_outlier_map.get(sid, "none") if ref_outlier_map else level
 
@@ -274,13 +291,22 @@ if st.session_state["df"] is not None:
                                 else: color_list.append("#1f77b4")
 
                             ref_keys = [k for k, v in ref_outlier_map.items() if v in ("strong_candidate", "candidate", "mild_candidate")] if ref_outlier_map else None
-                            fig, used_sub, flagged, bias, loa = plot_suite(
-                                df=df_pair, id_col=id_col, group_col=group_col, xcol=xcol, ycol=ycol,
-                                method=method, lam=lam, a=a, b=b, r=r, fit_info=fit_info,
-                                z_thresh=z_thresh, outlier_label_top=label_top_val,
-                                fig_width=16, fig_height=10, dpi=100, external_colors=color_list,
-                                force_flagged_ids=ref_keys
-                            )
+                            try:
+                                fig, used_sub, flagged, bias, loa = plot_suite(
+                                    df=df_pair, id_col=id_col, group_col=group_col, xcol=xcol, ycol=ycol,
+                                    method=method, lam=lam, a=a, b=b, r=r, fit_info=fit_info,
+                                    z_thresh=z_thresh_val, outlier_label_top=label_top_val,
+                                    fig_width=16, fig_height=10, dpi=100, external_colors=color_list,
+                                    force_flagged_ids=ref_keys, outlier_mode=outlier_mode_dd, pct_thresh=pct_thresh_val, abs_thresh=abs_thresh_val
+                                )
+                            except TypeError:
+                                fig, used_sub, flagged, bias, loa = plot_suite(
+                                    df=df_pair, id_col=id_col, group_col=group_col, xcol=xcol, ycol=ycol,
+                                    method=method, lam=lam, a=a, b=b, r=r, fit_info=fit_info,
+                                    z_thresh=z_thresh_val, outlier_label_top=label_top_val,
+                                    fig_width=16, fig_height=10, dpi=100, external_colors=color_list,
+                                    force_flagged_ids=ref_keys
+                                )
 
                             if fig is not None:
                                 figures.append((fig, method, xcol, ycol))

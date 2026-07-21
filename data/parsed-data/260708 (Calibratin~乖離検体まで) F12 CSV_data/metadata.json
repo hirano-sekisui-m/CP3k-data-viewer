@@ -44,57 +44,5 @@
     "37": "TAT207",
     "52": "TAT12"
   },
-  "source_csv": "260708 (Calibratin~乖離検体まで) F12 CSV_data.csv",
-  "Unknown": {
-    "outliers": {
-      "TAT207_vs_TAT1": {
-        "level": "none",
-        "z_MAD": -0.6226068549014669
-      },
-      "TAT207_vs_TAT2": {
-        "level": "none",
-        "z_MAD": -0.424813743692198
-      },
-      "TAT207_vs_TAT3": {
-        "level": "strong_candidate",
-        "z_MAD": 6.482390882102223
-      },
-      "TAT207_vs_TAT4": {
-        "level": "candidate",
-        "z_MAD": 4.063680480182874
-      },
-      "TAT207_vs_TAT5": {
-        "level": "none",
-        "z_MAD": 0.4234798445391634
-      },
-      "TAT207_vs_TAT6": {
-        "level": "none",
-        "z_MAD": 0.2417600125351674
-      },
-      "TAT207_vs_TAT7": {
-        "level": "none",
-        "z_MAD": 0.9379154496517884
-      },
-      "TAT207_vs_TAT8": {
-        "level": "none",
-        "z_MAD": 2.261914049764235
-      },
-      "TAT207_vs_TAT9": {
-        "level": "none",
-        "z_MAD": -0.5404114230647709
-      },
-      "TAT207_vs_TAT10": {
-        "level": "none",
-        "z_MAD": 1.6945500337057438
-      },
-      "TAT207_vs_TAT11": {
-        "level": "none",
-        "z_MAD": -0.4512465774869989
-      },
-      "TAT207_vs_TAT12": {
-        "level": "none",
-        "z_MAD": 0.6527734099454602
-      }
-    }
-  }
+  "source_csv": "260708 (Calibratin~乖離検体まで) F12 CSV_data.csv"
 }

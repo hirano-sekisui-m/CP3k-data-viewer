@@ -688,7 +688,10 @@ def plot_suite(
     fig_height=10,
     dpi=150,
     external_colors=None,
-    force_flagged_ids=None
+    force_flagged_ids=None,
+    outlier_mode="zMAD",
+    pct_thresh=15.0,
+    abs_thresh=8.0
 ):
     if fit_info is None:
         fit_info = {}
