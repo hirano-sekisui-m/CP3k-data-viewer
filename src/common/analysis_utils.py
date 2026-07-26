@@ -740,6 +740,13 @@ def plot_suite(
         flagged_ids.update(force_flagged_ids)
     is_flagged = sub[id_col].isin(flagged_ids).to_numpy()
 
+    # external_colors（ref_outlier_map由来）でオレンジ/赤/黄の検体も is_flagged に含める
+    # これにより基準ペアで乖離判定された検体は、他のペアでも大サイズ・黒枠で表示される
+    if external_colors is not None:
+        _OUTLIER_COLORS = {"red", "orange", "yellow"}
+        ext_flagged = np.array([c in _OUTLIER_COLORS for c in external_colors], dtype=bool)
+        is_flagged = is_flagged | ext_flagged
+
     if has_group:
         groups = sorted(sub[group_col].dropna().unique().tolist(), key=lambda t: str(t))
         cmap = plt.get_cmap("tab10")
