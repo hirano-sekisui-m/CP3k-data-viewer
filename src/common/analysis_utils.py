@@ -772,13 +772,14 @@ def plot_suite(
     )
 
     if np.any(is_flagged):
+        _ec1 = external_colors[is_flagged] if external_colors is not None else ["red"] * int(is_flagged.sum())
         ax1.scatter(
             x[is_flagged],
             y[is_flagged],
             s=outlier_s,
             alpha=0.95,
-            c=external_colors[is_flagged] if external_colors is not None else "red",
-            edgecolors="black",
+            facecolors="none",
+            edgecolors=_ec1,
             linewidths=outlier_lw
         )
 
@@ -908,13 +909,14 @@ def plot_suite(
     )
 
     if np.any(is_flagged):
+        _ec2 = external_colors[is_flagged] if external_colors is not None else ["red"] * int(is_flagged.sum())
         ax2.scatter(
             mean_xy[is_flagged],
             diff_yx[is_flagged],
             s=outlier_s,
             alpha=0.95,
-            c=external_colors[is_flagged] if external_colors is not None else "red",
-            edgecolors="black",
+            facecolors="none",
+            edgecolors=_ec2,
             linewidths=outlier_lw
         )
 
@@ -960,13 +962,14 @@ def plot_suite(
     )
 
     if np.any(is_flagged):
+        _ec3 = external_colors[is_flagged] if external_colors is not None else ["red"] * int(is_flagged.sum())
         ax3.scatter(
             x[is_flagged],
             resid[is_flagged],
             s=outlier_s,
             alpha=0.95,
-            c=external_colors[is_flagged] if external_colors is not None else "red",
-            edgecolors="black",
+            facecolors="none",
+            edgecolors=_ec3,
             linewidths=outlier_lw
         )
 
