@@ -4,6 +4,7 @@ import json
 import traceback
 import itertools
 import math
+import re
 
 import numpy as np
 import pandas as pd
@@ -50,6 +51,17 @@ if "df" not in st.session_state:
         "analysis_results": None,
         "metadata_enhanced": None
     })
+
+# ============================================================
+# Calibrator Detection
+# ============================================================
+def is_calibrator(request_no: str) -> bool:
+    """依頼No.が 'C + 数字' パターンならキャリブレーターと判定する。
+    例: 'C001', 'C1', 'c002' -> True
+        '0001', '001'       -> False
+    """
+    return bool(re.match(r'^C\d+$', str(request_no).strip(), re.IGNORECASE))
+
 
 # ============================================================
 # Helper Functions
@@ -442,11 +454,20 @@ if st.session_state["df"] is not None:
 
                 col3, col4 = st.columns(2)
                 with col3:
-                    tc_outlier = st.selectbox("乖離選択", options=["all", "outlier", "normal"],
+                    tc_outlier = st.selectbox("乖離選択（一般検体のみ適用）", options=["all", "outlier", "normal"],
                                               format_func=lambda x: {"all":"全て", "outlier":"乖離のみ", "normal":"非乖離のみ"}[x])
                 with col4:
                     tc_baseline_time_name = st.selectbox("基準時間(秒)", options=list(baseline_time_options.keys()))
                     tc_baseline_time = baseline_time_options[tc_baseline_time_name]
+
+                col5, col6 = st.columns(2)
+                with col5:
+                    show_calibrators = st.checkbox("キャリブレーター表示", value=True,
+                                                   help="C+数字パターン（例: C001）の検体を表示します。緑色で描画されます。")
+                with col6:
+                    st.markdown("""<div style='padding-top:8px; font-size:0.85em; color:#666;'>
+                        🟢 キャリブレーターは乖離フィルタの対象外です
+                    </div>""", unsafe_allow_html=True)
 
                 if st.button("タイムコース表示", type="primary"):
                     metadata = st.session_state.get("metadata_enhanced") or st.session_state.get("metadata")
@@ -465,30 +486,44 @@ if st.session_state["df"] is not None:
                     df_item = profile_df[profile_df["項目名"] == tc_item]
                     fig, ax = plt.subplots(figsize=(12, 7))
 
+                    from matplotlib.lines import Line2D
+
                     plotted_count = 0
+                    calib_count = 0
                     for sid, gdf in df_item.groupby("依頼No."):
                         sid_str = str(sid)
                         mapped_id = id_mapping.get(sid_str, sid_str)
                         if mapped_id not in allowed_sids: continue
 
-                        color, lw, alpha = "#1f77b4", 1.0, 0.3
-                        level = "none"
+                        calib = is_calibrator(sid_str)
 
-                        if ref_outlier_map and mapped_id in ref_outlier_map:
-                            level = ref_outlier_map[mapped_id]
-                        elif metadata and mapped_id in metadata and "outliers" in metadata[mapped_id]:
-                            levels = [v["level"] for v in metadata[mapped_id]["outliers"].values()]
-                            if "strong_candidate" in levels: level = "strong_candidate"
-                            elif "candidate" in levels: level = "candidate"
-                            elif "mild_candidate" in levels: level = "mild_candidate"
+                        # ── キャリブレーター ──────────────────────────────────
+                        if calib:
+                            if not show_calibrators:
+                                continue
+                            # キャリブレーターは乖離判定と独立した固有カテゴリ
+                            color, lw, alpha = "#2ca02c", 1.5, 0.55  # 緑
+                            calib_count += 1
 
-                        is_outlier = level in ["strong_candidate", "candidate", "mild_candidate"]
-                        if tc_outlier == "outlier" and not is_outlier: continue
-                        if tc_outlier == "normal" and is_outlier: continue
+                        # ── 一般検体 ─────────────────────────────────────────
+                        else:
+                            level = "none"
+                            if ref_outlier_map and mapped_id in ref_outlier_map:
+                                level = ref_outlier_map[mapped_id]
+                            elif metadata and mapped_id in metadata and "outliers" in metadata[mapped_id]:
+                                levels = [v["level"] for v in metadata[mapped_id]["outliers"].values()]
+                                if "strong_candidate" in levels: level = "strong_candidate"
+                                elif "candidate" in levels: level = "candidate"
+                                elif "mild_candidate" in levels: level = "mild_candidate"
 
-                        if level == "strong_candidate": color, lw, alpha = "red", 2.5, 0.9
-                        elif level == "candidate": color, lw, alpha = "orange", 2.0, 0.8
-                        elif level == "mild_candidate": color, lw, alpha = "yellow", 1.5, 0.7
+                            is_outlier = level in ["strong_candidate", "candidate", "mild_candidate"]
+                            if tc_outlier == "outlier" and not is_outlier: continue
+                            if tc_outlier == "normal" and is_outlier: continue
+
+                            if level == "strong_candidate":   color, lw, alpha = "red",     1.5, 0.9
+                            elif level == "candidate":        color, lw, alpha = "orange",  1.5, 0.8
+                            elif level == "mild_candidate":   color, lw, alpha = "yellow",  1.5, 0.7
+                            else:                             color, lw, alpha = "#1f77b4", 1.5, 0.3
 
                         time_vals = gdf["時間"].values
                         abs_vals = gdf["吸光度"].values
@@ -501,10 +536,31 @@ if st.session_state["df"] is not None:
                         ax.plot(time_vals, abs_vals, color=color, linewidth=lw, alpha=alpha)
                         plotted_count += 1
 
-                    ax.set_title(f"タイムコース反応: {tc_item} (プロット数: {plotted_count}, 基準時間: {tc_baseline_time if tc_baseline_time is not None else 'None'}s)")
+                    ax.set_title(
+                        f"タイムコース反応: {tc_item}  "
+                        f"（一般検体: {plotted_count - calib_count}件"
+                        + (f", キャリブレーター: {calib_count}件" if show_calibrators else "")
+                        + f", 基準時間: {tc_baseline_time if tc_baseline_time is not None else 'None'}s)"
+                    )
                     ax.set_xlabel("時間(秒)")
                     ax.set_ylabel("吸光度")
                     ax.grid(True, alpha=0.3)
-                    if tc_baseline_time is not None: ax.axvline(tc_baseline_time, color='black', linestyle='--', alpha=0.5)
+                    if tc_baseline_time is not None:
+                        ax.axvline(tc_baseline_time, color='black', linestyle='--', alpha=0.5)
+
+                    # 凡例
+                    legend_elements = [
+                        Line2D([0], [0], color="#1f77b4", lw=1.5, alpha=0.7, label="一般検体（正常）"),
+                        Line2D([0], [0], color="yellow",  lw=1.5, alpha=0.9, label="一般検体（軽度乖離）"),
+                        Line2D([0], [0], color="orange",  lw=1.5, alpha=0.9, label="一般検体（乖離）"),
+                        Line2D([0], [0], color="red",     lw=1.5, alpha=0.9, label="一般検体（強乖離）"),
+                    ]
+                    if show_calibrators:
+                        legend_elements.append(
+                            Line2D([0], [0], color="#2ca02c", lw=1.5, alpha=0.8, label="キャリブレーター")
+                        )
+                    ax.legend(handles=legend_elements, loc="upper right", fontsize=8,
+                              framealpha=0.85, edgecolor="#cccccc")
+
                     st.pyplot(fig)
                     plt.close(fig)
