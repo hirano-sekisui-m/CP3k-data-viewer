@@ -1,9 +1,12 @@
+# 仮想環境
+.venv/
+.DS_Store
+
 # データ関連
 data/raw-data/*.csv
 data/raw-data/processed/*.csv
 # data/parsed-data/
-data/export/*.png
-data/export/20260709_132812_260708 (Calibratin~乖離検体まで) F12 CSV_data
+data/export/
 
 # メモ
 AI-chat/

@@ -688,6 +688,7 @@ def plot_suite(
     fig_height=10,
     dpi=150,
     external_colors=None,
+    force_flagged_ids=None,
     outlier_mode="zMAD",
     pct_thresh=15.0,
     abs_thresh=8.0
@@ -735,7 +736,16 @@ def plot_suite(
     loa_lo = bias - 1.96 * sd if np.isfinite(sd) else np.nan
 
     flagged_ids = set(flagged[id_col].tolist()) if flagged is not None and not flagged.empty else set()
+    if force_flagged_ids is not None:
+        flagged_ids.update(force_flagged_ids)
     is_flagged = sub[id_col].isin(flagged_ids).to_numpy()
+
+    # external_colors（ref_outlier_map由来）でオレンジ/赤/黄の検体も is_flagged に含める
+    # これにより基準ペアで乖離判定された検体は、他のペアでも大サイズ・黒枠で表示される
+    if external_colors is not None:
+        _OUTLIER_COLORS = {"red", "orange", "yellow"}
+        ext_flagged = np.array([c in _OUTLIER_COLORS for c in external_colors], dtype=bool)
+        is_flagged = is_flagged | ext_flagged
 
     if has_group:
         groups = sorted(sub[group_col].dropna().unique().tolist(), key=lambda t: str(t))
@@ -762,13 +772,14 @@ def plot_suite(
     )
 
     if np.any(is_flagged):
+        _ec1 = external_colors[is_flagged] if external_colors is not None else ["red"] * int(is_flagged.sum())
         ax1.scatter(
             x[is_flagged],
             y[is_flagged],
             s=outlier_s,
             alpha=0.95,
-            c=external_colors[is_flagged] if external_colors is not None else "red",
-            edgecolors="black",
+            facecolors="none",
+            edgecolors=_ec1,
             linewidths=outlier_lw
         )
 
@@ -898,13 +909,14 @@ def plot_suite(
     )
 
     if np.any(is_flagged):
+        _ec2 = external_colors[is_flagged] if external_colors is not None else ["red"] * int(is_flagged.sum())
         ax2.scatter(
             mean_xy[is_flagged],
             diff_yx[is_flagged],
             s=outlier_s,
             alpha=0.95,
-            c=external_colors[is_flagged] if external_colors is not None else "red",
-            edgecolors="black",
+            facecolors="none",
+            edgecolors=_ec2,
             linewidths=outlier_lw
         )
 
@@ -950,13 +962,14 @@ def plot_suite(
     )
 
     if np.any(is_flagged):
+        _ec3 = external_colors[is_flagged] if external_colors is not None else ["red"] * int(is_flagged.sum())
         ax3.scatter(
             x[is_flagged],
             resid[is_flagged],
             s=outlier_s,
             alpha=0.95,
-            c=external_colors[is_flagged] if external_colors is not None else "red",
-            edgecolors="black",
+            facecolors="none",
+            edgecolors=_ec3,
             linewidths=outlier_lw
         )
 
