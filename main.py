@@ -80,7 +80,15 @@ def load_parsed_data_for_app(parsed_dir):
     measurement_df, profile_df, metadata, prescription_columns = load_parsed_for_analysis(parsed_dir)
 
     measurement_df = measurement_df.copy()
-    if "SampleID" not in measurement_df.columns:
+
+    # SampleID列が存在しても中身が全てNone/nanの場合はSIDや依頼No.で上書きする
+    def _sid_col_is_empty(df):
+        if "SampleID" not in df.columns:
+            return True
+        s = df["SampleID"].astype(str).str.strip()
+        return s.isin(["None", "nan", "NaN", "", "<NA>"]).all()
+
+    if _sid_col_is_empty(measurement_df):
         if "SID" in measurement_df.columns:
             measurement_df["SampleID"] = measurement_df["SID"].astype(str)
         elif "依頼No." in measurement_df.columns:
@@ -88,7 +96,9 @@ def load_parsed_data_for_app(parsed_dir):
         else:
             measurement_df["SampleID"] = measurement_df.index.astype(str)
 
-    id_col = pick_col(measurement_df, ID_COL_CANDIDATES, default="SID")
+    # SIDもID候補に追加して確実に検出（ID_COL_CANDIDATESにSIDがない場合への対策）
+    id_col_candidates_ext = list(ID_COL_CANDIDATES) + ["SID", "依頼No."]
+    id_col = pick_col(measurement_df, id_col_candidates_ext, default="SampleID")
     group_col_raw = pick_col(measurement_df, GROUP_COL_CANDIDATES, default=None)
     group_col = normalize_group_col(measurement_df, group_col_raw)
 
