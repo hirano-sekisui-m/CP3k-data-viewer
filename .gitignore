@@ -9,7 +9,7 @@ data/raw-data/processed/*.csv
 data/export/
 
 # メモ
-AI-chat/
+AI-chat/*.txt
 
 # テスト実行用
 test/*.py
