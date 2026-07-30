@@ -96,5 +96,1029 @@
         "z_MAD": 0.6527734099454602
       }
     }
+  },
+  "Request-0002": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "strong_candidate",
+        "abs_residual": 5.814634146341465,
+        "rel_diff_yx_pct": 28.019323671497588
+      },
+      "TAT207_vs_TAT2": {
+        "level": "mild_candidate",
+        "abs_residual": 6.908298582151801,
+        "rel_diff_yx_pct": 9.292929292929282
+      },
+      "TAT207_vs_TAT3": {
+        "level": "strong_candidate",
+        "abs_residual": 6.603930555555561,
+        "rel_diff_yx_pct": 28.57142857142858
+      },
+      "TAT207_vs_TAT4": {
+        "level": "strong_candidate",
+        "abs_residual": 7.097170846394988,
+        "rel_diff_yx_pct": 33.08641975308643
+      },
+      "TAT207_vs_TAT5": {
+        "level": "strong_candidate",
+        "abs_residual": 5.217828987782408,
+        "rel_diff_yx_pct": 25.837320574162693
+      },
+      "TAT207_vs_TAT6": {
+        "level": "strong_candidate",
+        "abs_residual": 5.811506702960575,
+        "rel_diff_yx_pct": 30.243902439024406
+      },
+      "TAT207_vs_TAT7": {
+        "level": "strong_candidate",
+        "abs_residual": 5.80151421800948,
+        "rel_diff_yx_pct": 29.68369829683699
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 8.923275862068966,
+        "rel_diff_yx_pct": 35.411471321695764
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 9.646288701208917,
+        "rel_diff_yx_pct": 22.55639097744361
+      },
+      "TAT207_vs_TAT10": {
+        "level": "strong_candidate",
+        "abs_residual": 7.475929571303592,
+        "rel_diff_yx_pct": 31.372549019607852
+      },
+      "TAT207_vs_TAT11": {
+        "level": "normal",
+        "abs_residual": 5.417816091954027,
+        "rel_diff_yx_pct": 1.7094017094017186
+      },
+      "TAT207_vs_TAT12": {
+        "level": "strong_candidate",
+        "abs_residual": 1.4025520833333367,
+        "rel_diff_yx_pct": 15.525114155251153
+      }
+    }
+  },
+  "Request-0003": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 0.6439024390243953,
+        "rel_diff_yx_pct": 2.985074626865675
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 1.0049207673060856,
+        "rel_diff_yx_pct": 50.0
+      },
+      "TAT207_vs_TAT3": {
+        "level": "strong_candidate",
+        "abs_residual": 0.04099999999999859,
+        "rel_diff_yx_pct": 22.81879194630874
+      },
+      "TAT207_vs_TAT4": {
+        "level": "strong_candidate",
+        "abs_residual": 0.9751645768025101,
+        "rel_diff_yx_pct": 24.00000000000001
+      },
+      "TAT207_vs_TAT5": {
+        "level": "strong_candidate",
+        "abs_residual": 0.17078612381407599,
+        "rel_diff_yx_pct": 16.66666666666667
+      },
+      "TAT207_vs_TAT6": {
+        "level": "strong_candidate",
+        "abs_residual": 0.20218798657198356,
+        "rel_diff_yx_pct": 20.408163265306122
+      },
+      "TAT207_vs_TAT7": {
+        "level": "normal",
+        "abs_residual": 0.45464218009478685,
+        "rel_diff_yx_pct": 2.985074626865675
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 0.42097701149425504,
+        "rel_diff_yx_pct": 20.408163265306122
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 1.795815037650181,
+        "rel_diff_yx_pct": 69.30693069306932
+      },
+      "TAT207_vs_TAT10": {
+        "level": "strong_candidate",
+        "abs_residual": 0.08717191601049734,
+        "rel_diff_yx_pct": 21.621621621621617
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 0.2545977011494216,
+        "rel_diff_yx_pct": 39.02439024390246
+      },
+      "TAT207_vs_TAT12": {
+        "level": "strong_candidate",
+        "abs_residual": 3.2672395833333336,
+        "rel_diff_yx_pct": 39.02439024390246
+      }
+    }
+  },
+  "Request-0004": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "mild_candidate",
+        "abs_residual": 0.039024390243897145,
+        "rel_diff_yx_pct": 9.195402298850563
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 1.3852585487906595,
+        "rel_diff_yx_pct": 41.90476190476189
+      },
+      "TAT207_vs_TAT3": {
+        "level": "strong_candidate",
+        "abs_residual": 0.16349305555555915,
+        "rel_diff_yx_pct": 15.55555555555554
+      },
+      "TAT207_vs_TAT4": {
+        "level": "strong_candidate",
+        "abs_residual": 1.1179310344827584,
+        "rel_diff_yx_pct": 20.540540540540526
+      },
+      "TAT207_vs_TAT5": {
+        "level": "strong_candidate",
+        "abs_residual": 0.38450958978909,
+        "rel_diff_yx_pct": 17.582417582417577
+      },
+      "TAT207_vs_TAT6": {
+        "level": "candidate",
+        "abs_residual": 0.22918148238127323,
+        "rel_diff_yx_pct": 10.285714285714269
+      },
+      "TAT207_vs_TAT7": {
+        "level": "mild_candidate",
+        "abs_residual": 0.04067061611374356,
+        "rel_diff_yx_pct": 6.976744186046506
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 0.18879310344827438,
+        "rel_diff_yx_pct": 22.459893048128336
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 4.580862404006055,
+        "rel_diff_yx_pct": 45.5813953488372
+      },
+      "TAT207_vs_TAT10": {
+        "level": "strong_candidate",
+        "abs_residual": 0.1308617672790895,
+        "rel_diff_yx_pct": 17.582417582417577
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 0.11091954022988482,
+        "rel_diff_yx_pct": 34.82587064676616
+      },
+      "TAT207_vs_TAT12": {
+        "level": "normal",
+        "abs_residual": 0.13973958333333414,
+        "rel_diff_yx_pct": 4.938271604938275
+      }
+    }
+  },
+  "Request-0005": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "strong_candidate",
+        "abs_residual": 5.321951219512194,
+        "rel_diff_yx_pct": 23.684210526315784
+      },
+      "TAT207_vs_TAT2": {
+        "level": "normal",
+        "abs_residual": 9.233381984987496,
+        "rel_diff_yx_pct": 1.5564202334630295
+      },
+      "TAT207_vs_TAT3": {
+        "level": "normal",
+        "abs_residual": 1.8971874999999976,
+        "rel_diff_yx_pct": 5.231388329979882
+      },
+      "TAT207_vs_TAT4": {
+        "level": "candidate",
+        "abs_residual": 3.8493730407523508,
+        "rel_diff_yx_pct": 14.736842105263156
+      },
+      "TAT207_vs_TAT5": {
+        "level": "strong_candidate",
+        "abs_residual": 4.244263190225929,
+        "rel_diff_yx_pct": 19.82758620689656
+      },
+      "TAT207_vs_TAT6": {
+        "level": "strong_candidate",
+        "abs_residual": 4.8230372859083275,
+        "rel_diff_yx_pct": 23.684210526315784
+      },
+      "TAT207_vs_TAT7": {
+        "level": "strong_candidate",
+        "abs_residual": 4.894988151658769,
+        "rel_diff_yx_pct": 23.194748358862146
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 6.412356321839077,
+        "rel_diff_yx_pct": 19.82758620689656
+      },
+      "TAT207_vs_TAT9": {
+        "level": "normal",
+        "abs_residual": 17.211929875371364,
+        "rel_diff_yx_pct": 3.1872509960159388
+      },
+      "TAT207_vs_TAT10": {
+        "level": "candidate",
+        "abs_residual": 4.0270997375328115,
+        "rel_diff_yx_pct": 12.5
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 9.492528735632188,
+        "rel_diff_yx_pct": 18.415417558886514
+      },
+      "TAT207_vs_TAT12": {
+        "level": "mild_candidate",
+        "abs_residual": 0.2131770833333313,
+        "rel_diff_yx_pct": 8.16326530612245
+      }
+    }
+  },
+  "Request-0006": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 1.0170731707317096,
+        "rel_diff_yx_pct": 4.835164835164842
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 1.0049207673060856,
+        "rel_diff_yx_pct": 36.464088397790064
+      },
+      "TAT207_vs_TAT3": {
+        "level": "strong_candidate",
+        "abs_residual": 3.917416666666668,
+        "rel_diff_yx_pct": 19.144602851323828
+      },
+      "TAT207_vs_TAT4": {
+        "level": "mild_candidate",
+        "abs_residual": 1.1676097178683413,
+        "rel_diff_yx_pct": 6.956521739130441
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 1.5542804245443982,
+        "rel_diff_yx_pct": 6.535947712418301
+      },
+      "TAT207_vs_TAT6": {
+        "level": "mild_candidate",
+        "abs_residual": 2.449621095000932,
+        "rel_diff_yx_pct": 9.442060085836907
+      },
+      "TAT207_vs_TAT7": {
+        "level": "candidate",
+        "abs_residual": 2.9199928909952604,
+        "rel_diff_yx_pct": 11.464968152866241
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 3.2686781609195457,
+        "rel_diff_yx_pct": 20.606060606060613
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 6.3821320465629015,
+        "rel_diff_yx_pct": 32.76836158192091
+      },
+      "TAT207_vs_TAT10": {
+        "level": "mild_candidate",
+        "abs_residual": 0.6880905511811015,
+        "rel_diff_yx_pct": 7.792207792207795
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 0.11091954022988304,
+        "rel_diff_yx_pct": 20.242914979757085
+      },
+      "TAT207_vs_TAT12": {
+        "level": "normal",
+        "abs_residual": 3.1384895833333317,
+        "rel_diff_yx_pct": 5.689277899343548
+      }
+    }
+  },
+  "Request-0007": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 0.03902439024389537,
+        "rel_diff_yx_pct": 1.7094017094017138
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 6.048290241868223,
+        "rel_diff_yx_pct": 15.143603133159282
+      },
+      "TAT207_vs_TAT3": {
+        "level": "normal",
+        "abs_residual": 0.04099999999999682,
+        "rel_diff_yx_pct": 0.0
+      },
+      "TAT207_vs_TAT4": {
+        "level": "normal",
+        "abs_residual": 0.5003213166144178,
+        "rel_diff_yx_pct": 1.1363636363636322
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 0.060105965463108646,
+        "rel_diff_yx_pct": 3.4482758620689538
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 0.14101242863610253,
+        "rel_diff_yx_pct": 4.920405209840799
+      },
+      "TAT207_vs_TAT7": {
+        "level": "mild_candidate",
+        "abs_residual": 1.8399312796208562,
+        "rel_diff_yx_pct": 8.23529411764705
+      },
+      "TAT207_vs_TAT8": {
+        "level": "normal",
+        "abs_residual": 1.255459770114932,
+        "rel_diff_yx_pct": 1.4025245441795233
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 13.901323361796749,
+        "rel_diff_yx_pct": 16.81759379042691
+      },
+      "TAT207_vs_TAT10": {
+        "level": "normal",
+        "abs_residual": 0.02732939632546305,
+        "rel_diff_yx_pct": 2.234636871508392
+      },
+      "TAT207_vs_TAT11": {
+        "level": "normal",
+        "abs_residual": 5.20287356321839,
+        "rel_diff_yx_pct": 2.5104602510460214
+      },
+      "TAT207_vs_TAT12": {
+        "level": "normal",
+        "abs_residual": 3.2372395833333343,
+        "rel_diff_yx_pct": 0.282885431400287
+      }
+    }
+  },
+  "Request-0008": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 0.9560975609756,
+        "rel_diff_yx_pct": 4.514672686230249
+      },
+      "TAT207_vs_TAT2": {
+        "level": "candidate",
+        "abs_residual": 9.163198498748962,
+        "rel_diff_yx_pct": 10.261780104712054
+      },
+      "TAT207_vs_TAT3": {
+        "level": "normal",
+        "abs_residual": 1.1848124999999925,
+        "rel_diff_yx_pct": 3.8245219347581454
+      },
+      "TAT207_vs_TAT4": {
+        "level": "normal",
+        "abs_residual": 0.25126959247648983,
+        "rel_diff_yx_pct": 0.8869179600886887
+      },
+      "TAT207_vs_TAT5": {
+        "level": "mild_candidate",
+        "abs_residual": 1.3355248788478633,
+        "rel_diff_yx_pct": 8.036739380022963
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 0.14101242863610963,
+        "rel_diff_yx_pct": 5.442176870748297
+      },
+      "TAT207_vs_TAT7": {
+        "level": "mild_candidate",
+        "abs_residual": 2.3848744075829416,
+        "rel_diff_yx_pct": 8.99653979238754
+      },
+      "TAT207_vs_TAT8": {
+        "level": "mild_candidate",
+        "abs_residual": 5.698563218390802,
+        "rel_diff_yx_pct": 9.237875288683602
+      },
+      "TAT207_vs_TAT9": {
+        "level": "normal",
+        "abs_residual": 21.790716848222125,
+        "rel_diff_yx_pct": 5.579399141630905
+      },
+      "TAT207_vs_TAT10": {
+        "level": "normal",
+        "abs_residual": 3.418241469816273,
+        "rel_diff_yx_pct": 6.613454960091218
+      },
+      "TAT207_vs_TAT11": {
+        "level": "normal",
+        "abs_residual": 8.413218390804595,
+        "rel_diff_yx_pct": 3.1390134529147953
+      },
+      "TAT207_vs_TAT12": {
+        "level": "mild_candidate",
+        "abs_residual": 0.8613020833333351,
+        "rel_diff_yx_pct": 8.275862068965505
+      }
+    }
+  },
+  "Request-0009": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "candidate",
+        "abs_residual": 0.17317073170731412,
+        "rel_diff_yx_pct": 9.523809523809529
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 10.658131776480403,
+        "rel_diff_yx_pct": 95.95375722543353
+      },
+      "TAT207_vs_TAT3": {
+        "level": "strong_candidate",
+        "abs_residual": 0.27583333333333293,
+        "rel_diff_yx_pct": 18.181818181818187
+      },
+      "TAT207_vs_TAT4": {
+        "level": "strong_candidate",
+        "abs_residual": 1.1355407523510994,
+        "rel_diff_yx_pct": 19.09547738693468
+      },
+      "TAT207_vs_TAT5": {
+        "level": "strong_candidate",
+        "abs_residual": 0.7484548836256888,
+        "rel_diff_yx_pct": 19.09547738693468
+      },
+      "TAT207_vs_TAT6": {
+        "level": "strong_candidate",
+        "abs_residual": 1.4402546186379759,
+        "rel_diff_yx_pct": 24.390243902439025
+      },
+      "TAT207_vs_TAT7": {
+        "level": "candidate",
+        "abs_residual": 0.6799170616113734,
+        "rel_diff_yx_pct": 12.499999999999993
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 0.8928160919540229,
+        "rel_diff_yx_pct": 26.923076923076927
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 13.637059268670939,
+        "rel_diff_yx_pct": 113.04347826086956
+      },
+      "TAT207_vs_TAT10": {
+        "level": "strong_candidate",
+        "abs_residual": 0.2488517060367439,
+        "rel_diff_yx_pct": 17.258883248730957
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 6.924712643678163,
+        "rel_diff_yx_pct": 74.12587412587413
+      },
+      "TAT207_vs_TAT12": {
+        "level": "normal",
+        "abs_residual": 0.13973958333333414,
+        "rel_diff_yx_pct": 2.2471910112359472
+      }
+    }
+  },
+  "Request-0010": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "mild_candidate",
+        "abs_residual": 0.19756097560975228,
+        "rel_diff_yx_pct": 9.04522613065327
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 14.546267723102588,
+        "rel_diff_yx_pct": 104.04040404040404
+      },
+      "TAT207_vs_TAT3": {
+        "level": "strong_candidate",
+        "abs_residual": 1.403923611111109,
+        "rel_diff_yx_pct": 26.484018264840188
+      },
+      "TAT207_vs_TAT4": {
+        "level": "strong_candidate",
+        "abs_residual": 1.2481191222570551,
+        "rel_diff_yx_pct": 19.047619047619047
+      },
+      "TAT207_vs_TAT5": {
+        "level": "strong_candidate",
+        "abs_residual": 1.5941300935089728,
+        "rel_diff_yx_pct": 24.884792626728107
+      },
+      "TAT207_vs_TAT6": {
+        "level": "strong_candidate",
+        "abs_residual": 0.7898518336517242,
+        "rel_diff_yx_pct": 17.307692307692314
+      },
+      "TAT207_vs_TAT7": {
+        "level": "mild_candidate",
+        "abs_residual": 0.20795023696682335,
+        "rel_diff_yx_pct": 7.106598984771567
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 0.8956896551724132,
+        "rel_diff_yx_pct": 25.68807339449542
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 17.435574749154505,
+        "rel_diff_yx_pct": 118.10344827586208
+      },
+      "TAT207_vs_TAT10": {
+        "level": "strong_candidate",
+        "abs_residual": 0.6617016622922129,
+        "rel_diff_yx_pct": 19.905213270142173
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 9.27873563218391,
+        "rel_diff_yx_pct": 81.25
+      },
+      "TAT207_vs_TAT12": {
+        "level": "normal",
+        "abs_residual": 0.19651041666666735,
+        "rel_diff_yx_pct": 2.1276595744680775
+      }
+    }
+  },
+  "Request-0011": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 0.22926829268292437,
+        "rel_diff_yx_pct": 6.349206349206354
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 17.24220183486239,
+        "rel_diff_yx_pct": 98.96480331262941
+      },
+      "TAT207_vs_TAT3": {
+        "level": "candidate",
+        "abs_residual": 0.15561111111111003,
+        "rel_diff_yx_pct": 11.583011583011583
+      },
+      "TAT207_vs_TAT4": {
+        "level": "mild_candidate",
+        "abs_residual": 0.21604231974921895,
+        "rel_diff_yx_pct": 7.114624505928857
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 1.0592237731212908,
+        "rel_diff_yx_pct": 1.6528925619834651
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 0.3423232052740346,
+        "rel_diff_yx_pct": 3.2258064516129066
+      },
+      "TAT207_vs_TAT7": {
+        "level": "normal",
+        "abs_residual": 0.04067061611374356,
+        "rel_diff_yx_pct": 2.4291497975708563
+      },
+      "TAT207_vs_TAT8": {
+        "level": "candidate",
+        "abs_residual": 0.18879310344827438,
+        "rel_diff_yx_pct": 13.026819923371654
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 22.247558343765764,
+        "rel_diff_yx_pct": 115.42461005199304
+      },
+      "TAT207_vs_TAT10": {
+        "level": "candidate",
+        "abs_residual": 0.06890857392825822,
+        "rel_diff_yx_pct": 10.116731517509733
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 8.23045977011494,
+        "rel_diff_yx_pct": 66.66666666666667
+      },
+      "TAT207_vs_TAT12": {
+        "level": "strong_candidate",
+        "abs_residual": 1.9969270833333326,
+        "rel_diff_yx_pct": 24.884792626728107
+      }
+    }
+  },
+  "Request-0012": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 0.5975609756097597,
+        "rel_diff_yx_pct": 4.958677685950425
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 12.211697247706418,
+        "rel_diff_yx_pct": 72.43243243243242
+      },
+      "TAT207_vs_TAT3": {
+        "level": "normal",
+        "abs_residual": 0.535395833333336,
+        "rel_diff_yx_pct": 2.785515320334262
+      },
+      "TAT207_vs_TAT4": {
+        "level": "normal",
+        "abs_residual": 1.3455956112852654,
+        "rel_diff_yx_pct": 4.624277456647404
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 0.6567964644051614,
+        "rel_diff_yx_pct": 1.7094017094017138
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 0.4967538401228033,
+        "rel_diff_yx_pct": 1.7094017094017138
+      },
+      "TAT207_vs_TAT7": {
+        "level": "normal",
+        "abs_residual": 0.4676943127962083,
+        "rel_diff_yx_pct": 2.785515320334262
+      },
+      "TAT207_vs_TAT8": {
+        "level": "strong_candidate",
+        "abs_residual": 0.842816091954024,
+        "rel_diff_yx_pct": 14.173228346456689
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 13.331228629084993,
+        "rel_diff_yx_pct": 85.80645161290322
+      },
+      "TAT207_vs_TAT10": {
+        "level": "normal",
+        "abs_residual": 2.3275590551181082,
+        "rel_diff_yx_pct": 6.413994169096197
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 6.924712643678163,
+        "rel_diff_yx_pct": 48.71794871794873
+      },
+      "TAT207_vs_TAT12": {
+        "level": "strong_candidate",
+        "abs_residual": 2.272447916666666,
+        "rel_diff_yx_pct": 22.641509433962266
+      }
+    }
+  },
+  "Request-0013": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "candidate",
+        "abs_residual": 2.2878048780487816,
+        "rel_diff_yx_pct": 10.526315789473678
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 19.439157631359457,
+        "rel_diff_yx_pct": 78.99159663865545
+      },
+      "TAT207_vs_TAT3": {
+        "level": "normal",
+        "abs_residual": 0.08370833333333394,
+        "rel_diff_yx_pct": 4.081632653061218
+      },
+      "TAT207_vs_TAT4": {
+        "level": "normal",
+        "abs_residual": 0.7474843260188102,
+        "rel_diff_yx_pct": 1.3986013986014016
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 0.0994701726844518,
+        "rel_diff_yx_pct": 0.46189376443417035
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 0.39010443698443353,
+        "rel_diff_yx_pct": 0.9216589861751118
+      },
+      "TAT207_vs_TAT7": {
+        "level": "normal",
+        "abs_residual": 0.2863530805687198,
+        "rel_diff_yx_pct": 0.46189376443417035
+      },
+      "TAT207_vs_TAT8": {
+        "level": "candidate",
+        "abs_residual": 1.1652298850574745,
+        "rel_diff_yx_pct": 12.987012987012985
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 15.75964937685682,
+        "rel_diff_yx_pct": 82.92682926829268
+      },
+      "TAT207_vs_TAT10": {
+        "level": "normal",
+        "abs_residual": 0.02732939632546305,
+        "rel_diff_yx_pct": 4.966139954853264
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 12.166091954022988,
+        "rel_diff_yx_pct": 56.47840531561461
+      },
+      "TAT207_vs_TAT12": {
+        "level": "strong_candidate",
+        "abs_residual": 3.029635416666668,
+        "rel_diff_yx_pct": 25.0
+      }
+    }
+  },
+  "Request-0014": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "mild_candidate",
+        "abs_residual": 2.7634146341463364,
+        "rel_diff_yx_pct": 8.969696969696976
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 1.1709966638865836,
+        "rel_diff_yx_pct": 25.15212981744422
+      },
+      "TAT207_vs_TAT3": {
+        "level": "candidate",
+        "abs_residual": 4.208409722222221,
+        "rel_diff_yx_pct": 11.274509803921573
+      },
+      "TAT207_vs_TAT4": {
+        "level": "mild_candidate",
+        "abs_residual": 3.2066144200626994,
+        "rel_diff_yx_pct": 7.961399276236439
+      },
+      "TAT207_vs_TAT5": {
+        "level": "candidate",
+        "abs_residual": 3.4364958023343135,
+        "rel_diff_yx_pct": 13.366336633663362
+      },
+      "TAT207_vs_TAT6": {
+        "level": "candidate",
+        "abs_residual": 2.9772153174243954,
+        "rel_diff_yx_pct": 13.102595797280603
+      },
+      "TAT207_vs_TAT7": {
+        "level": "candidate",
+        "abs_residual": 3.9082203791469325,
+        "rel_diff_yx_pct": 13.102595797280603
+      },
+      "TAT207_vs_TAT8": {
+        "level": "candidate",
+        "abs_residual": 7.511206896551727,
+        "rel_diff_yx_pct": 14.427860696517422
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 1.7958150376501862,
+        "rel_diff_yx_pct": 45.381165919282516
+      },
+      "TAT207_vs_TAT10": {
+        "level": "mild_candidate",
+        "abs_residual": 3.974781277340334,
+        "rel_diff_yx_pct": 8.212560386473426
+      },
+      "TAT207_vs_TAT11": {
+        "level": "candidate",
+        "abs_residual": 2.410919540229891,
+        "rel_diff_yx_pct": 9.713024282560703
+      },
+      "TAT207_vs_TAT12": {
+        "level": "strong_candidate",
+        "abs_residual": 5.588489583333342,
+        "rel_diff_yx_pct": 25.654450261780116
+      }
+    }
+  },
+  "Request-0015": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "mild_candidate",
+        "abs_residual": 2.1634146341463385,
+        "rel_diff_yx_pct": 8.460236886632826
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 10.580859049207675,
+        "rel_diff_yx_pct": 51.566265060240966
+      },
+      "TAT207_vs_TAT3": {
+        "level": "normal",
+        "abs_residual": 0.6994305555555584,
+        "rel_diff_yx_pct": 1.307189542483667
+      },
+      "TAT207_vs_TAT4": {
+        "level": "normal",
+        "abs_residual": 0.21604231974921717,
+        "rel_diff_yx_pct": 0.0
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 0.060105965463108646,
+        "rel_diff_yx_pct": 2.9654036243822146
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 0.2973068067625988,
+        "rel_diff_yx_pct": 4.651162790697681
+      },
+      "TAT207_vs_TAT7": {
+        "level": "candidate",
+        "abs_residual": 3.5978364928909983,
+        "rel_diff_yx_pct": 15.008726003490406
+      },
+      "TAT207_vs_TAT8": {
+        "level": "normal",
+        "abs_residual": 3.7818965517241345,
+        "rel_diff_yx_pct": 6.7114093959731544
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 14.252334217754438,
+        "rel_diff_yx_pct": 69.4915254237288
+      },
+      "TAT207_vs_TAT10": {
+        "level": "normal",
+        "abs_residual": 1.290890201224851,
+        "rel_diff_yx_pct": 1.307189542483667
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 9.220114942528738,
+        "rel_diff_yx_pct": 38.954248366013076
+      },
+      "TAT207_vs_TAT12": {
+        "level": "strong_candidate",
+        "abs_residual": 3.1850520833333356,
+        "rel_diff_yx_pct": 21.58273381294964
+      }
+    }
+  },
+  "Request-0016": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 1.017073170731713,
+        "rel_diff_yx_pct": 0.23391812865495745
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 20.718494578815672,
+        "rel_diff_yx_pct": 57.19063545150501
+      },
+      "TAT207_vs_TAT3": {
+        "level": "mild_candidate",
+        "abs_residual": 4.169118055555558,
+        "rel_diff_yx_pct": 8.520179372197303
+      },
+      "TAT207_vs_TAT4": {
+        "level": "mild_candidate",
+        "abs_residual": 3.983322884012537,
+        "rel_diff_yx_pct": 8.73460246360582
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 4.426964029759056,
+        "rel_diff_yx_pct": 5.688282138794084
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 1.6831069105646108,
+        "rel_diff_yx_pct": 1.4150943396226447
+      },
+      "TAT207_vs_TAT7": {
+        "level": "normal",
+        "abs_residual": 0.36935308056871463,
+        "rel_diff_yx_pct": 2.3696682464454977
+      },
+      "TAT207_vs_TAT8": {
+        "level": "normal",
+        "abs_residual": 0.3864942528735611,
+        "rel_diff_yx_pct": 4.7999999999999865
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 24.657002653263334,
+        "rel_diff_yx_pct": 71.9640179910045
+      },
+      "TAT207_vs_TAT10": {
+        "level": "candidate",
+        "abs_residual": 5.21493875765529,
+        "rel_diff_yx_pct": 12.719298245614027
+      },
+      "TAT207_vs_TAT11": {
+        "level": "strong_candidate",
+        "abs_residual": 11.625862068965517,
+        "rel_diff_yx_pct": 35.45279383429672
+      },
+      "TAT207_vs_TAT12": {
+        "level": "candidate",
+        "abs_residual": 1.0339062500000011,
+        "rel_diff_yx_pct": 12.967581047381552
+      }
+    }
+  },
+  "Request-0017": {
+    "outliers": {
+      "TAT207_vs_TAT1": {
+        "level": "normal",
+        "abs_residual": 0.8195121951219306,
+        "rel_diff_yx_pct": 4.500703234880454
+      },
+      "TAT207_vs_TAT2": {
+        "level": "strong_candidate",
+        "abs_residual": 5.793348623853234,
+        "rel_diff_yx_pct": 18.02252816020024
+      },
+      "TAT207_vs_TAT3": {
+        "level": "mild_candidate",
+        "abs_residual": 9.054534722222229,
+        "rel_diff_yx_pct": 9.186351706036746
+      },
+      "TAT207_vs_TAT4": {
+        "level": "mild_candidate",
+        "abs_residual": 6.93802507836989,
+        "rel_diff_yx_pct": 8.052805280528046
+      },
+      "TAT207_vs_TAT5": {
+        "level": "normal",
+        "abs_residual": 0.5674766227561179,
+        "rel_diff_yx_pct": 5.803255484784159
+      },
+      "TAT207_vs_TAT6": {
+        "level": "normal",
+        "abs_residual": 0.15893981138951574,
+        "rel_diff_yx_pct": 7.2701354240912455
+      },
+      "TAT207_vs_TAT7": {
+        "level": "normal",
+        "abs_residual": 1.5513436018957236,
+        "rel_diff_yx_pct": 2.0847810979847115
+      },
+      "TAT207_vs_TAT8": {
+        "level": "mild_candidate",
+        "abs_residual": 4.05890804597702,
+        "rel_diff_yx_pct": 7.41721854304635
+      },
+      "TAT207_vs_TAT9": {
+        "level": "strong_candidate",
+        "abs_residual": 11.032068517722678,
+        "rel_diff_yx_pct": 28.73969375736159
+      },
+      "TAT207_vs_TAT10": {
+        "level": "normal",
+        "abs_residual": 2.485936132983369,
+        "rel_diff_yx_pct": 3.114421123899793
+      },
+      "TAT207_vs_TAT11": {
+        "level": "normal",
+        "abs_residual": 4.632758620689671,
+        "rel_diff_yx_pct": 6.520292747837646
+      },
+      "TAT207_vs_TAT12": {
+        "level": "mild_candidate",
+        "abs_residual": 1.8723437499999989,
+        "rel_diff_yx_pct": 8.160343593414463
+      }
+    }
   }
 }
