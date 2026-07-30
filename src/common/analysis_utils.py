@@ -735,17 +735,14 @@ def plot_suite(
     loa_hi = bias + 1.96 * sd if np.isfinite(sd) else np.nan
     loa_lo = bias - 1.96 * sd if np.isfinite(sd) else np.nan
 
-    flagged_ids = set(flagged[id_col].tolist()) if flagged is not None and not flagged.empty else set()
-    if force_flagged_ids is not None:
-        flagged_ids.update(force_flagged_ids)
-    is_flagged = sub[id_col].isin(flagged_ids).to_numpy()
-
-    # external_colors（ref_outlier_map由来）でオレンジ/赤/黄の検体も is_flagged に含める
-    # これにより基準ペアで乖離判定された検体は、他のペアでも大サイズ・黒枠で表示される
     if external_colors is not None:
         _OUTLIER_COLORS = {"red", "orange", "yellow"}
-        ext_flagged = np.array([c in _OUTLIER_COLORS for c in external_colors], dtype=bool)
-        is_flagged = is_flagged | ext_flagged
+        is_flagged = np.array([c in _OUTLIER_COLORS for c in external_colors], dtype=bool)
+    else:
+        flagged_ids = set(flagged[id_col].tolist()) if flagged is not None and not flagged.empty else set()
+        if force_flagged_ids is not None:
+            flagged_ids.update(force_flagged_ids)
+        is_flagged = sub[id_col].isin(flagged_ids).to_numpy()
 
     if has_group:
         groups = sorted(sub[group_col].dropna().unique().tolist(), key=lambda t: str(t))
@@ -860,36 +857,38 @@ def plot_suite(
         )
 
     # ---------------- 乖離IDラベル ----------------
-    if (
-        show_outlier_labels
-        and np.any(is_flagged)
-        and outlier_label_top > 0
-        and flagged is not None
-        and not flagged.empty
-    ):
-        if outlier_mode == "zMAD" and "abs_z_MAD" in flagged.columns:
-            top_flagged = flagged.sort_values("abs_z_MAD", ascending=False).head(outlier_label_top)
-        elif outlier_mode == "error" and "abs_diff_yx" in flagged.columns:
-            top_flagged = flagged.sort_values("abs_diff_yx", ascending=False).head(outlier_label_top)
+    if show_outlier_labels and np.any(is_flagged) and outlier_label_top > 0:
+        if external_colors is not None and force_flagged_ids:
+            label_df = sub[sub[id_col].isin(force_flagged_ids)].copy()
+        elif flagged is not None and not flagged.empty:
+            label_df = flagged.copy()
         else:
-            top_flagged = flagged.head(outlier_label_top)
+            label_df = pd.DataFrame()
 
-        for _, row in top_flagged.iterrows():
-            try:
-                xx0 = float(row[xcol])
-                yy0 = float(row[ycol])
-                sid = row[id_col]
+        if not label_df.empty:
+            if outlier_mode == "zMAD" and "abs_z_MAD" in label_df.columns:
+                top_flagged = label_df.sort_values("abs_z_MAD", ascending=False).head(outlier_label_top)
+            elif outlier_mode == "error" and "abs_diff_yx" in label_df.columns:
+                top_flagged = label_df.sort_values("abs_diff_yx", ascending=False).head(outlier_label_top)
+            else:
+                top_flagged = label_df.head(outlier_label_top)
 
-                if np.isfinite(xx0) and np.isfinite(yy0):
-                    ax1.text(
-                        xx0,
-                        yy0,
-                        str(sid),
-                        fontsize=8,
-                        color="red"
-                    )
-            except Exception:
-                continue
+            for _, row in top_flagged.iterrows():
+                try:
+                    xx0 = float(row[xcol])
+                    yy0 = float(row[ycol])
+                    sid = row[id_col]
+
+                    if np.isfinite(xx0) and np.isfinite(yy0):
+                        ax1.text(
+                            xx0,
+                            yy0,
+                            str(sid),
+                            fontsize=8,
+                            color="red"
+                        )
+                except Exception:
+                    continue
 
     if has_group:
         for g in groups[:10]:

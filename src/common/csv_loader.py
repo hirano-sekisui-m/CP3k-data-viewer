@@ -616,13 +616,18 @@ def extract_sample_id(measurement_df, preferred_keys=None):
                             extracted = None
 
                         if extracted is not None and extracted.dropna().shape[0] > 0:
-                            return extracted.astype(str)
+                            s = extracted.astype(str).str.strip()
+                            if not s.isin(["None", "nan", "NaN", "", "<NA>"]).all():
+                                return s
 
-                # 辞書でなければそのまま文字列化して返す
-                return series.astype(str).str.strip()
-
-            # その他の列はそのまま返す
-            return series.astype(str).str.strip()
+                # 辞書でなければそのまま文字列化
+                s = series.astype(str).str.strip()
+                if not s.isin(["None", "nan", "NaN", "", "<NA>"]).all():
+                    return s
+            else:
+                s = series.astype(str).str.strip()
+                if not s.isin(["None", "nan", "NaN", "", "<NA>"]).all():
+                    return s
 
     # 2) 属性列がない場合、先頭列を ID として使う
     first_col = measurement_df.columns[0]
