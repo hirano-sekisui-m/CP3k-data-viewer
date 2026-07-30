@@ -723,6 +723,12 @@ if st.session_state["df"] is not None:
                     new_end_name = st.selectbox("終了時間 (New)", options=list(time_opts.keys()), index=min(24, len(time_opts)-1), key="new_end")
                     curve_mode_new = st.selectbox("検量線モード (New)", options=["piecewise_linear", "spline"], format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン", key="curve_mode_new")
 
+                show_tc_outliers_tab4 = st.checkbox(
+                    "プロット図で乖離・非乖離を色分け表示",
+                    value=True,
+                    help="相関解析で判定された乖離レベルに基づき、New予測濃度のサンプル点を強乖離(赤)、乖離(オレンジ)、軽度乖離(黄)、非乖離(青)に色分け表示します。"
+                )
+
                 if st.button("2. 解析実行", type="primary", key="btn_tc_analyze"):
                     cal_ids = [s.strip() for s in cal_ids_str.split(",") if s.strip()]
                     cal_concs = []
@@ -804,6 +810,37 @@ if st.session_state["df"] is not None:
 
                                 cal_id_to_conc = dict(zip(cal_ids, cal_concs))
 
+                                # 乖離レベル判定準備
+                                ref_outlier_map = st.session_state.get("ref_outlier_map")
+                                metadata_session = st.session_state.get("metadata_enhanced") or st.session_state.get("metadata")
+                                id_col_session = st.session_state.get("id_col", "SampleID")
+                                id_mapping = {}
+                                if id_col_session and id_col_session != "依頼No." and id_col_session in measurement_df.columns:
+                                    for _, r_row in measurement_df.iterrows():
+                                        rid_str = str(r_row.get("依頼No.", ""))
+                                        sid_str = str(r_row.get(id_col_session, ""))
+                                        if rid_str and sid_str:
+                                            id_mapping[rid_str] = sid_str
+
+                                def get_sample_outlier_level(sid_raw):
+                                    sid_str = str(sid_raw)
+                                    mapped_id = id_mapping.get(sid_str, sid_str)
+                                    if ref_outlier_map and mapped_id in ref_outlier_map:
+                                        return ref_outlier_map[mapped_id]
+                                    if metadata_session and mapped_id in metadata_session and "outliers" in metadata_session[mapped_id]:
+                                        levels = [v["level"] for v in metadata_session[mapped_id]["outliers"].values()]
+                                        if "strong_candidate" in levels: return "strong_candidate"
+                                        if "candidate" in levels: return "candidate"
+                                        if "mild_candidate" in levels: return "mild_candidate"
+                                    return "none"
+
+                                level_label_map = {
+                                    "strong_candidate": "強乖離",
+                                    "candidate": "乖離",
+                                    "mild_candidate": "軽度乖離",
+                                    "none": "非乖離"
+                                }
+
                                 results = []
                                 for sid in base_rates.keys():
                                     b_r = base_rates[sid]
@@ -811,18 +848,21 @@ if st.session_state["df"] is not None:
                                     
                                     if is_calibrator(sid):
                                         orig_conc = cal_id_to_conc.get(sid, np.nan)
+                                        outlier_status = "キャリブレーター"
                                     else:
                                         m_row = measurement_df[measurement_df["依頼No."].astype(str) == sid]
                                         if not m_row.empty:
                                             orig_conc = pd.to_numeric(m_row.iloc[0].get(tc_item_tab4, np.nan), errors='coerce')
                                         else:
                                             orig_conc = np.nan
+                                        outlier_status = level_label_map.get(get_sample_outlier_level(sid), "非乖離")
 
                                     # Base検量線で再計算した濃度（プロット用）
                                     base_recalc_conc = predict_base(b_r)
                                     new_conc = predict_new(n_r)
                                     results.append({
                                         "依頼No.": sid,
+                                        "乖離判定": outlier_status,
                                         "元の処理値 (Base)": b_r,
                                         "新たな処理値 (New)": n_r,
                                         "装置測定値": orig_conc,
@@ -905,20 +945,36 @@ if st.session_state["df"] is not None:
                                 # --- Plot samples (Base) - predict_base で再計算した濃度を使用 ---
                                 sample_x_base = [r["Base再計算濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["Base再計算濃度"])]
                                 sample_y_base = [r["元の処理値 (Base)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["Base再計算濃度"])]
-                                ax.scatter(sample_x_base, sample_y_base, color='gray', alpha=0.5,
-                                           zorder=7, label="Samples (Base)")
+                                if sample_x_base:
+                                    ax.scatter(sample_x_base, sample_y_base, color='gray', alpha=0.4,
+                                               zorder=7, label="Samples (Base)")
 
                                 # --- Plot samples (New) ---
-                                sample_x_new = [r["New予測濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
-                                sample_y_new = [r["新たな処理値 (New)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
-                                ax.scatter(sample_x_new, sample_y_new, color='blue', alpha=0.6,
-                                           zorder=8, label="Samples (New)")
+                                if show_tc_outliers_tab4:
+                                    level_plot_specs = [
+                                        ("none", "blue", "Samples New (非乖離)", 8, "o"),
+                                        ("mild_candidate", "gold", "Samples New (軽度乖離)", 9, "^"),
+                                        ("candidate", "orange", "Samples New (乖離)", 9, "^"),
+                                        ("strong_candidate", "red", "Samples New (強乖離)", 9, "^"),
+                                    ]
+                                    for lvl_key, col_val, lbl_val, z_val, mkr in level_plot_specs:
+                                        sub_x = [r["New予測濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"]) and get_sample_outlier_level(r["依頼No."]) == lvl_key]
+                                        sub_y = [r["新たな処理値 (New)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"]) and get_sample_outlier_level(r["依頼No."]) == lvl_key]
+                                        if sub_x:
+                                            ax.scatter(sub_x, sub_y, color=col_val, marker=mkr, alpha=0.75,
+                                                       zorder=z_val, label=lbl_val)
+                                else:
+                                    sample_x_new = [r["New予測濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
+                                    sample_y_new = [r["新たな処理値 (New)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
+                                    if sample_x_new:
+                                        ax.scatter(sample_x_new, sample_y_new, color='blue', alpha=0.6,
+                                                   zorder=8, label="Samples (New)")
 
                                 ax.set_xlabel(f"濃度{unit}")
                                 ax.set_ylabel("処理値 (mAbs/min)")
                                 ax.set_title(f"検量線 (Base: {mode_base_str}, New: {mode_new_str})")
                                 ax.grid(True, alpha=0.3)
-                                ax.legend()
+                                ax.legend(fontsize=8, loc='best')
                                 st.pyplot(fig)
                                 plt.close(fig)
 
