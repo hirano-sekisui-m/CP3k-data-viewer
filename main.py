@@ -700,25 +700,71 @@ if st.session_state["df"] is not None:
 
                                 res_df = pd.DataFrame(results)
 
+
+                                # 単位の取得 (安全のため、ファイルから再読み込み)
+                                unit = ""
+                                parsed_dir = st.session_state.get("parsed_dir")
+                                if parsed_dir and (parsed_dir / "metadata.json").exists():
+                                    try:
+                                        import json
+                                        with open(parsed_dir / "metadata.json", "r", encoding="utf-8") as f:
+                                            disk_metadata = json.load(f)
+                                        if "measurement_units" in disk_metadata:
+                                            unit_dict = disk_metadata["measurement_units"]
+                                            if tc_item_tab4 in unit_dict:
+                                                unit = f" ({unit_dict[tc_item_tab4]})"
+                                        st.info(f"単位情報は '{parsed_dir / 'metadata.json'}' から読み込みました。")
+                                    except Exception as e:
+                                        st.warning(f"metadata.jsonの読み込みに失敗しました: {e}")
+                                elif st.session_state.get("metadata") and "measurement_units" in st.session_state["metadata"]:
+                                    unit_dict = st.session_state["metadata"]["measurement_units"]
+                                    if tc_item_tab4 in unit_dict:
+                                        unit = f" ({unit_dict[tc_item_tab4]})"
+
+                                # Valid base cals
+                                valid_base_cals = [(r_base, c) for r_base, c in zip(cal_base_rates, cal_concs) if not np.isnan(r_base)]
+                                valid_base_cals.sort(key=lambda x: x[1]) # sort by concentration
+                                x_base_cals = np.array([x[1] for x in valid_base_cals]) # Conc
+                                y_base_cals = np.array([x[0] for x in valid_base_cals]) # Rate
+
+                                # We want x=Conc, y=Rate
+                                # valid_cals is sorted by rate, let's sort by conc
+                                valid_cals.sort(key=lambda x: x[1])
+                                x_new_cals = np.array([x[1] for x in valid_cals]) # Conc
+                                y_new_cals = np.array([x[0] for x in valid_cals]) # Rate
+
                                 st.subheader("解析結果")
 
                                 # Plot Calibration Curve
-                                fig, ax = plt.subplots(figsize=(8, 5))
-                                ax.plot(x_cals, y_cals, 'ko-', label="Calibrators (New Points)")
+                                fig, ax = plt.subplots(figsize=(10, 6))
 
-                                # Plot a dense curve if spline
+                                # Plot Calibrators (Original)
+                                ax.plot(x_base_cals, y_base_cals, color='gray', marker='s', linestyle='-', label="Calibrators (Original)")
+
+                                # Plot Calibrators (New Points)
+                                ax.plot(x_new_cals, y_new_cals, color='black', marker='o', linestyle='-', label="Calibrators (New)")
+
+                                # Plot a dense curve if spline for New Points
                                 if curve_mode == "spline":
-                                    x_dense = np.linspace(x_cals.min() - 0.5, x_cals.max() + 0.5, 200)
-                                    y_dense = [predict(x) for x in x_dense]
-                                    ax.plot(x_dense, y_dense, 'r--', alpha=0.6, label="Spline Fit")
+                                    # the 'predict' function gives conc from rate. To plot rate vs conc we need to map y -> predict(y).
+                                    # actually we have the inverse mapping since predict is (rate) -> conc.
+                                    # We can just plot the dense points for New
+                                    rate_dense = np.linspace(y_new_cals.min() - 0.5, y_new_cals.max() + 0.5, 200)
+                                    conc_dense = [predict(r) for r in rate_dense]
+                                    ax.plot(conc_dense, rate_dense, 'r--', alpha=0.6, label="Spline Fit (New)")
 
-                                # Plot samples
-                                sample_x = [r["新たな処理値 (New)"] for r in results if r["依頼No."] not in cal_ids]
-                                sample_y = [r["新たな予測濃度"] for r in results if r["依頼No."] not in cal_ids]
-                                ax.scatter(sample_x, sample_y, color='blue', alpha=0.3, label="Samples")
+                                # Plot samples (Original)
+                                sample_x_orig = [r["元の濃度 (Measurement)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["元の濃度 (Measurement)"])]
+                                sample_y_orig = [r["元の処理値 (Base)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["元の濃度 (Measurement)"])]
+                                ax.scatter(sample_x_orig, sample_y_orig, color='gray', alpha=0.4, label="Samples (Original)")
 
-                                ax.set_xlabel("処理値 (mAbs/min)")
-                                ax.set_ylabel("濃度")
+                                # Plot samples (New)
+                                sample_x_new = [r["新たな予測濃度"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["新たな予測濃度"])]
+                                sample_y_new = [r["新たな処理値 (New)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["新たな予測濃度"])]
+                                ax.scatter(sample_x_new, sample_y_new, color='blue', alpha=0.6, label="Samples (New)")
+
+                                ax.set_xlabel(f"濃度{unit}")
+                                ax.set_ylabel("処理値 (mAbs/min)")
                                 ax.set_title(f"検量線 ({curve_mode})")
                                 ax.grid(True, alpha=0.3)
                                 ax.legend()
