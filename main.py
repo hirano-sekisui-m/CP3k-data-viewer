@@ -170,7 +170,7 @@ st.divider()
 if st.session_state["df"] is not None:
     value_cols = st.session_state["value_cols"]
 
-    tab1, tab2, tab3 = st.tabs(["相関解析", "Excel出力", "タイムコース表示"])
+    tab1, tab2, tab3, tab4 = st.tabs(["相関解析", "Excel出力", "タイムコース表示", "タイムコース解析"])
 
     # ----------------------------------------------------
     # TAB 1: 相関解析
@@ -564,3 +564,211 @@ if st.session_state["df"] is not None:
 
                     st.pyplot(fig)
                     plt.close(fig)
+    # ----------------------------------------------------
+    # TAB 4: タイムコース解析
+    # ----------------------------------------------------
+    with tab4:
+        st.header("タイムコース解析（吸光度からの濃度再計算）")
+        profile_df = st.session_state["profile_df"]
+        measurement_df = st.session_state["df"]
+
+        if profile_df is not None and measurement_df is not None:
+            items = list(profile_df["項目名"].unique())
+            if not items:
+                st.warning("プロファイルデータに項目名がありません。")
+            else:
+                col1, col2 = st.columns(2)
+                with col1:
+                    tc_item_tab4 = st.selectbox("解析項目", options=items, key="tc_item_tab4")
+
+                # Calibrator inputs
+                st.subheader("キャリブレーター設定")
+                st.info("※ C001, C002 等のIDをカンマ区切りで入力。濃度も対応する順で入力。")
+                col3, col4 = st.columns(2)
+                with col3:
+                    cal_ids_str = st.text_input("キャリブレーターID (例: C001, C002, ...)", value="C001, C002, C003, C004, C005, C006")
+                with col4:
+                    cal_concs_str = st.text_input("キャリブレーター濃度 (例: 0.0, 5.3, ...)", value="0.0, 5.3, 14.0, 30.4, 56.7, 139.8")
+
+                curve_mode = st.selectbox("検量線モード", options=["piecewise_linear", "spline"], format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン")
+
+                # Points
+                st.subheader("測光ポイント設定")
+                st.info("計算式: 処理値(mAbs/min) = {(Abs_end - Abs_start) * 0.1} / {(Time_end - Time_start) / 60}")
+
+                # Get available time points
+                times = sorted(profile_df[profile_df["項目名"] == tc_item_tab4]["時間"].unique())
+                time_opts = {f"{t:.1f}s": t for t in times}
+
+                col5, col6 = st.columns(2)
+                with col5:
+                    st.write("**デフォルト測光ポイント (Base)**")
+                    base_start_name = st.selectbox("開始時間 (Base)", options=list(time_opts.keys()), index=min(9, len(time_opts)-1), key="base_start")
+                    base_end_name = st.selectbox("終了時間 (Base)", options=list(time_opts.keys()), index=min(19, len(time_opts)-1), key="base_end")
+                with col6:
+                    st.write("**変更後測光ポイント (New)**")
+                    new_start_name = st.selectbox("開始時間 (New)", options=list(time_opts.keys()), index=min(14, len(time_opts)-1), key="new_start")
+                    new_end_name = st.selectbox("終了時間 (New)", options=list(time_opts.keys()), index=min(24, len(time_opts)-1), key="new_end")
+
+                if st.button("2. 解析実行", type="primary", key="btn_tc_analyze"):
+                    cal_ids = [s.strip() for s in cal_ids_str.split(",") if s.strip()]
+                    cal_concs = []
+                    for s in cal_concs_str.split(","):
+                        if s.strip():
+                            try:
+                                cal_concs.append(float(s.strip()))
+                            except ValueError:
+                                pass
+
+                    if len(cal_ids) != len(cal_concs):
+                        st.error("キャリブレーターIDの数と濃度の数が一致しません。")
+                    else:
+                        with st.spinner("解析中..."):
+                            import numpy as np
+                            from scipy.interpolate import interp1d
+
+                            df_item = profile_df[profile_df["項目名"] == tc_item_tab4]
+
+                            def calc_rate(time_start, time_end):
+                                rates = {}
+                                for sid, gdf in df_item.groupby("依頼No."):
+                                    gdf_sorted = gdf.sort_values("時間")
+                                    t_vals = gdf_sorted["時間"].values
+                                    a_vals = gdf_sorted["吸光度"].values
+
+                                    idx_s = np.argmin(np.abs(t_vals - time_start))
+                                    idx_e = np.argmin(np.abs(t_vals - time_end))
+
+                                    t_s, a_s = t_vals[idx_s], a_vals[idx_s]
+                                    t_e, a_e = t_vals[idx_e], a_vals[idx_e]
+
+                                    if t_e != t_s:
+                                        rate = ((a_e - a_s) * 0.1) / ((t_e - t_s) / 60.0)
+                                        rates[str(sid)] = rate
+                                return rates
+
+                            base_t_s = time_opts[base_start_name]
+                            base_t_e = time_opts[base_end_name]
+                            new_t_s = time_opts[new_start_name]
+                            new_t_e = time_opts[new_end_name]
+
+                            base_rates = calc_rate(base_t_s, base_t_e)
+                            new_rates = calc_rate(new_t_s, new_t_e)
+
+                            cal_base_rates = [base_rates.get(cid, np.nan) for cid in cal_ids]
+                            cal_new_rates = [new_rates.get(cid, np.nan) for cid in cal_ids]
+
+                            # Filter out missing cals
+                            valid_cals = [(r_new, c) for r_new, c in zip(cal_new_rates, cal_concs) if not np.isnan(r_new)]
+                            if len(valid_cals) < 2:
+                                st.error("有効なキャリブレーターデータが不足しています。")
+                            else:
+                                valid_cals.sort(key=lambda x: x[0])
+                                x_cals = np.array([x[0] for x in valid_cals])
+                                y_cals = np.array([x[1] for x in valid_cals])
+
+                                def predict(x_val):
+                                    if np.isnan(x_val): return np.nan
+                                    if curve_mode == "piecewise_linear":
+                                        return np.interp(x_val, x_cals, y_cals)
+                                    else:
+                                        f = interp1d(x_cals, y_cals, kind='cubic', fill_value="extrapolate")
+                                        return float(f(x_val))
+
+                                results = []
+                                for sid in base_rates.keys():
+                                    b_r = base_rates[sid]
+                                    n_r = new_rates[sid]
+                                    orig_conc = np.nan
+                                    # Try to find original conc in measurement_df
+                                    # measurement_df has "依頼No." or we use id_col
+                                    id_col = st.session_state.get("id_col", "SampleID")
+                                    # Check both SID and 依頼No. match
+                                    m_row = measurement_df[measurement_df["依頼No."].astype(str) == sid]
+                                    if not m_row.empty:
+                                        orig_conc = pd.to_numeric(m_row.iloc[0].get(tc_item_tab4, np.nan), errors='coerce')
+
+                                    new_conc = predict(n_r)
+                                    results.append({
+                                        "依頼No.": sid,
+                                        "元の処理値 (Base)": b_r,
+                                        "新たな処理値 (New)": n_r,
+                                        "元の濃度 (Measurement)": orig_conc,
+                                        "新たな予測濃度": new_conc,
+                                        "濃度差 (New - Orig)": new_conc - orig_conc if not np.isnan(orig_conc) else np.nan
+                                    })
+
+                                res_df = pd.DataFrame(results)
+
+
+                                # 単位の取得 (安全のため、ファイルから再読み込み)
+                                unit = ""
+                                parsed_dir = st.session_state.get("parsed_dir")
+                                if parsed_dir and (parsed_dir / "metadata.json").exists():
+                                    try:
+                                        import json
+                                        with open(parsed_dir / "metadata.json", "r", encoding="utf-8") as f:
+                                            disk_metadata = json.load(f)
+                                        if "measurement_units" in disk_metadata:
+                                            unit_dict = disk_metadata["measurement_units"]
+                                            if tc_item_tab4 in unit_dict:
+                                                unit = f" ({unit_dict[tc_item_tab4]})"
+                                        st.info(f"単位情報は '{parsed_dir / 'metadata.json'}' から読み込みました。")
+                                    except Exception as e:
+                                        st.warning(f"metadata.jsonの読み込みに失敗しました: {e}")
+                                elif st.session_state.get("metadata") and "measurement_units" in st.session_state["metadata"]:
+                                    unit_dict = st.session_state["metadata"]["measurement_units"]
+                                    if tc_item_tab4 in unit_dict:
+                                        unit = f" ({unit_dict[tc_item_tab4]})"
+
+                                # Valid base cals
+                                valid_base_cals = [(r_base, c) for r_base, c in zip(cal_base_rates, cal_concs) if not np.isnan(r_base)]
+                                valid_base_cals.sort(key=lambda x: x[1]) # sort by concentration
+                                x_base_cals = np.array([x[1] for x in valid_base_cals]) # Conc
+                                y_base_cals = np.array([x[0] for x in valid_base_cals]) # Rate
+
+                                # We want x=Conc, y=Rate
+                                # valid_cals is sorted by rate, let's sort by conc
+                                valid_cals.sort(key=lambda x: x[1])
+                                x_new_cals = np.array([x[1] for x in valid_cals]) # Conc
+                                y_new_cals = np.array([x[0] for x in valid_cals]) # Rate
+
+                                st.subheader("解析結果")
+
+                                # Plot Calibration Curve
+                                fig, ax = plt.subplots(figsize=(10, 6))
+
+                                # Plot Calibrators (Original)
+                                ax.plot(x_base_cals, y_base_cals, color='gray', marker='s', linestyle='-', label="Calibrators (Original)")
+
+                                # Plot Calibrators (New Points)
+                                ax.plot(x_new_cals, y_new_cals, color='black', marker='o', linestyle='-', label="Calibrators (New)")
+
+                                # Plot a dense curve if spline for New Points
+                                if curve_mode == "spline":
+                                    # the 'predict' function gives conc from rate. To plot rate vs conc we need to map y -> predict(y).
+                                    # actually we have the inverse mapping since predict is (rate) -> conc.
+                                    # We can just plot the dense points for New
+                                    rate_dense = np.linspace(y_new_cals.min() - 0.5, y_new_cals.max() + 0.5, 200)
+                                    conc_dense = [predict(r) for r in rate_dense]
+                                    ax.plot(conc_dense, rate_dense, 'r--', alpha=0.6, label="Spline Fit (New)")
+
+                                # Plot samples (Original)
+                                sample_x_orig = [r["元の濃度 (Measurement)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["元の濃度 (Measurement)"])]
+                                sample_y_orig = [r["元の処理値 (Base)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["元の濃度 (Measurement)"])]
+                                ax.scatter(sample_x_orig, sample_y_orig, color='gray', alpha=0.4, label="Samples (Original)")
+
+                                # Plot samples (New)
+                                sample_x_new = [r["新たな予測濃度"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["新たな予測濃度"])]
+                                sample_y_new = [r["新たな処理値 (New)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["新たな予測濃度"])]
+                                ax.scatter(sample_x_new, sample_y_new, color='blue', alpha=0.6, label="Samples (New)")
+
+                                ax.set_xlabel(f"濃度{unit}")
+                                ax.set_ylabel("処理値 (mAbs/min)")
+                                ax.set_title(f"検量線 ({curve_mode})")
+                                ax.grid(True, alpha=0.3)
+                                ax.legend()
+                                st.pyplot(fig)
+                                plt.close(fig)
+
+                                st.dataframe(res_df)
