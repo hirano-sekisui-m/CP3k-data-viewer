@@ -978,5 +978,83 @@ if st.session_state["df"] is not None:
                                 st.pyplot(fig)
                                 plt.close(fig)
 
+                                # --- 相関プロット: Base再計算濃度 vs New予測濃度 ---
+                                st.subheader("相関プロット: Base濃度 vs New濃度")
+
+                                # 一般検体のみ抽出（キャリブレーター除外）
+                                corr_data = [r for r in results if not is_calibrator(r["依頼No."])
+                                             and np.isfinite(r["Base再計算濃度"]) and np.isfinite(r["New予測濃度"])]
+
+                                if len(corr_data) >= 2:
+                                    corr_x = np.array([r["Base再計算濃度"] for r in corr_data])
+                                    corr_y = np.array([r["New予測濃度"] for r in corr_data])
+
+                                    # Pearson r
+                                    from common.analysis_utils import pearson_r, regression_fit_info
+                                    corr_r = pearson_r(corr_x, corr_y)
+                                    corr_a, corr_b, corr_fi = regression_fit_info(corr_x, corr_y, method="PassingBablok")
+
+                                    fig2, ax2 = plt.subplots(figsize=(8, 8))
+
+                                    # 乖離レベル別にプロット
+                                    if show_tc_outliers_tab4:
+                                        corr_plot_specs = [
+                                            ("none", "blue", "非乖離", "o"),
+                                            ("mild_candidate", "gold", "軽度乖離", "^"),
+                                            ("candidate", "orange", "乖離", "^"),
+                                            ("strong_candidate", "red", "強乖離", "^"),
+                                        ]
+                                        for lvl_key, col_val, lbl_val, mkr in corr_plot_specs:
+                                            sx = [r["Base再計算濃度"] for r in corr_data if get_sample_outlier_level(r["依頼No."]) == lvl_key]
+                                            sy = [r["New予測濃度"] for r in corr_data if get_sample_outlier_level(r["依頼No."]) == lvl_key]
+                                            if sx:
+                                                ax2.scatter(sx, sy, color=col_val, marker=mkr, s=40, alpha=0.8, zorder=5, label=lbl_val)
+                                    else:
+                                        ax2.scatter(corr_x, corr_y, color="blue", s=40, alpha=0.7, zorder=5, label="Samples")
+
+                                    # y=x 線
+                                    lo = min(float(np.nanmin(corr_x)), float(np.nanmin(corr_y)))
+                                    hi = max(float(np.nanmax(corr_x)), float(np.nanmax(corr_y)))
+                                    margin = (hi - lo) * 0.05
+                                    ax2.plot([lo - margin, hi + margin], [lo - margin, hi + margin],
+                                             "--", lw=1, alpha=0.6, color="gray", label="y=x")
+
+                                    # 回帰直線
+                                    if np.isfinite(corr_a) and np.isfinite(corr_b):
+                                        xx_line = np.array([lo - margin, hi + margin])
+                                        ax2.plot(xx_line, corr_a * xx_line + corr_b,
+                                                 lw=1.8, alpha=0.85, color="darkorange", label="回帰直線")
+
+                                    # 統計情報テキスト
+                                    sl_ci_lo = corr_fi.get("slope_ci_low", np.nan)
+                                    sl_ci_hi = corr_fi.get("slope_ci_high", np.nan)
+                                    ic_ci_lo = corr_fi.get("intercept_ci_low", np.nan)
+                                    ic_ci_hi = corr_fi.get("intercept_ci_high", np.nan)
+                                    stat_lines = [
+                                        f"n={len(corr_data)}",
+                                        f"Pearson r={corr_r:.4f}",
+                                        f"Passing-Bablok",
+                                        f"y={corr_a:.4f}x+{corr_b:.4f}",
+                                    ]
+                                    if np.isfinite(sl_ci_lo) and np.isfinite(sl_ci_hi):
+                                        stat_lines.append(f"slope 95%CI [{sl_ci_lo:.4f}, {sl_ci_hi:.4f}]")
+                                    if np.isfinite(ic_ci_lo) and np.isfinite(ic_ci_hi):
+                                        stat_lines.append(f"intercept 95%CI [{ic_ci_lo:.4f}, {ic_ci_hi:.4f}]")
+
+                                    ax2.text(0.03, 0.97, "\n".join(stat_lines), transform=ax2.transAxes,
+                                             va="top", fontsize=9,
+                                             bbox=dict(boxstyle="round", facecolor="white", alpha=0.75))
+
+                                    ax2.set_xlabel(f"Base再計算濃度{unit}")
+                                    ax2.set_ylabel(f"New予測濃度{unit}")
+                                    ax2.set_title("相関プロット: デフォルト設定 vs 変更後設定")
+                                    ax2.set_aspect("equal", adjustable="datalim")
+                                    ax2.grid(True, alpha=0.25)
+                                    ax2.legend(fontsize=8, loc="lower right")
+                                    st.pyplot(fig2)
+                                    plt.close(fig2)
+                                else:
+                                    st.warning("相関プロットを描画するための有効なサンプルデータが不足しています。")
+
                                 st.dataframe(res_df)
 
