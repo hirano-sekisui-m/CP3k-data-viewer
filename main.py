@@ -63,6 +63,35 @@ def is_calibrator(request_no: str) -> bool:
     return bool(re.match(r'^C\d+$', str(request_no).strip(), re.IGNORECASE))
 
 
+def find_calibrator_groups(measurement_df, item_col):
+    """指定項目に対して、連続するキャリブレーターIDグループを検出する。"""
+    if measurement_df is None or item_col not in measurement_df.columns:
+        return []
+    
+    groups = []
+    current_group = []
+    current_values = []
+    
+    id_col = "依頼No." if "依頼No." in measurement_df.columns else measurement_df.columns[0]
+    
+    for _, row in measurement_df.iterrows():
+        rid = str(row[id_col])
+        is_cal = is_calibrator(rid)
+        val = row.get(item_col)
+        has_val = pd.notna(val)
+        
+        if is_cal and has_val:
+            current_group.append(rid)
+            current_values.append(float(val))
+        else:
+            if current_group:
+                groups.append({'ids': current_group, 'values': current_values})
+                current_group, current_values = [], []
+    if current_group:
+        groups.append({'ids': current_group, 'values': current_values})
+    return groups
+
+
 # ============================================================
 # Helper Functions
 # ============================================================
@@ -352,13 +381,36 @@ if st.session_state["df"] is not None:
                         except Exception as e:
                             st.error(f"{xcol} vs {ycol} の解析中にエラーが発生しました: {e}")
 
+                # 解析設定をまとめて保存（Excel出力時の情報表示用）
+                run_settings = {
+                    "parsed_dir": str(parsed_dir),
+                    "input_stem": parsed_dir.name,
+                    "mode": mode,
+                    "regression_method": reg_method,
+                    "all_regression": all_reg_ck,
+                    "deming_lambda": deming_lambda_val,
+                    "outlier_mode": outlier_mode_dd,
+                    "z_thresh": z_thresh_val,
+                    "pct_thresh": pct_thresh_val,
+                    "abs_thresh": abs_thresh_val,
+                    "outlier_label_top": label_top_val,
+                    "use_range": use_range_ck,
+                    "range_min": range_min_txt,
+                    "range_max": range_max_txt,
+                    "ref_pair_x": ref_pair_x,
+                    "ref_pair_y": ref_pair_y,
+                    "n_pairs": len(pairs),
+                    "pairs": [(x, y) for x, y in pairs],
+                }
+
                 st.session_state["analysis_results"] = {
                     "run_metadata": run_metadata,
                     "ref_outlier_map": ref_outlier_map,
                     "summary_rows": summary_rows,
                     "sample_metric_tables": sample_metric_tables,
                     "outlier_tables": outlier_tables,
-                    "figures": figures
+                    "figures": figures,
+                    "run_settings": run_settings,
                 }
                 st.session_state["metadata_enhanced"] = run_metadata
                 st.session_state["ref_outlier_map"] = ref_outlier_map
@@ -383,10 +435,38 @@ if st.session_state["df"] is not None:
         if st.session_state["analysis_results"] is None:
             st.warning("先に『相関解析』タブで『②解析実行』を行ってください。")
         else:
+            # 解析設定の概要を常に表示
+            res = st.session_state["analysis_results"]
+            s = res.get("run_settings", {})
+            if s:
+                _mode_labels = {"adjacent": "隣接ペア", "all": "全ペア", "baseline": "基準ペア"}
+                _outlier_labels = {"zMAD": "zMAD (標準化残差)", "error": "error (臨床的許容誤差)"}
+                _reg_labels = {"OLS": "OLS（最小二乗）", "Deming": "Deming（両軸誤差）",
+                               "TheilSen": "Theil-Sen（ロバスト）", "PassingBablok": "Passing-Bablok（ノンパラメトリック）"}
+                _ref_x = s.get("ref_pair_x", "(未選択)")
+                _ref_y = s.get("ref_pair_y", "(未選択)")
+                _ref_str = f"{_ref_x} vs {_ref_y}" if _ref_x != "(未選択)" and _ref_y != "(未選択)" else "なし"
+
+                if s.get("outlier_mode") == "zMAD":
+                    _outlier_detail = f"z(MAD) ≥ {s.get('z_thresh', 3.5)}"
+                else:
+                    _outlier_detail = f"許容誤差 {s.get('pct_thresh', 10.0)}% / 絶対値 {s.get('abs_thresh', 2.0)}"
+
+                st.info(
+                    f"📋 **解析設定の確認**\n\n"
+                    f"| 項目 | 値 |\n"
+                    f"|---|---|\n"
+                    f"| 📂 解析対象ファイル | `{s.get('input_stem', '?')}` |\n"
+                    f"| 🔗 ペアモード | {_mode_labels.get(s.get('mode',''), s.get('mode','?'))} ({s.get('n_pairs', '?')} ペア) |\n"
+                    f"| 📐 回帰法 | {_reg_labels.get(s.get('regression_method',''), s.get('regression_method','?'))}{' (全回帰法)' if s.get('all_regression') else ''} |\n"
+                    f"| 🔍 乖離判定基準 | {_outlier_labels.get(s.get('outlier_mode',''), '?')} ({_outlier_detail}) |\n"
+                    f"| 🎯 乖離基準ペア | {_ref_str} |\n"
+                    f"| 📏 対象範囲絞り | {'あり: ' + str(s.get('range_min','')) + ' ～ ' + str(s.get('range_max','')) if s.get('use_range') else 'なし'} |"
+                )
+
             if st.button("③Excel出力", type="primary"):
                 with st.spinner("Excelファイル作成中..."):
                     try:
-                        res = st.session_state["analysis_results"]
                         parsed_dir = st.session_state["parsed_dir"]
 
                         dirs = make_output_dirs(OUTPUT_ROOT, input_stem=parsed_dir.name)
@@ -415,7 +495,17 @@ if st.session_state["df"] is not None:
                         if res["sample_metric_tables"]: write_df_to_sheet(output_xlsx, pd.concat(res["sample_metric_tables"]), SHEET_SAMPLE_METRICS)
                         if res["outlier_tables"]: write_df_to_sheet(output_xlsx, pd.concat(res["outlier_tables"]), SHEET_OUTLIERS)
 
-                        st.success(f"Excel保存完了! 出力先: {output_xlsx}")
+                        # 出力完了メッセージ（解析設定 + 出力先をまとめて表示）
+                        st.success(f"✅ Excel保存完了!")
+                        st.info(
+                            f"📁 **出力先情報**\n\n"
+                            f"| 項目 | パス |\n"
+                            f"|---|---|\n"
+                            f"| 📊 Excelファイル | `{output_xlsx}` |\n"
+                            f"| 🖼️ プロット保存先 | `{dirs['plots']}` |\n"
+                            f"| 📂 出力フォルダ | `{dirs['plots'].parent}` |"
+                        )
+
                     except Exception as e:
                         st.error(f"出力エラー:\n{traceback.format_exc()}")
 
@@ -581,19 +671,40 @@ if st.session_state["df"] is not None:
                 with col1:
                     tc_item_tab4 = st.selectbox("解析項目", options=items, key="tc_item_tab4")
 
-                # Calibrator inputs
+                # Detect calibrator groups
+                cal_groups = find_calibrator_groups(measurement_df, tc_item_tab4)
+
                 st.subheader("キャリブレーター設定")
-                st.info("※ C001, C002 等のIDをカンマ区切りで入力。濃度も対応する順で入力。")
+                if cal_groups:
+                    group_opts = {}
+                    for i, g in enumerate(cal_groups):
+                        label = f"グループ {i+1}: {g['ids'][0]} ~ {g['ids'][-1]} ({len(g['ids'])}点データ)"
+                        group_opts[label] = g['ids']
+                    group_opts["カスタム入力 (手動指定)"] = None
+
+                    selected_group_label = st.selectbox(
+                        "キャリブレーターグループ選択",
+                        options=list(group_opts.keys()),
+                        index=0
+                    )
+                    selected_ids = group_opts[selected_group_label]
+
+                    if selected_ids is not None:
+                        default_ids_str = ", ".join(selected_ids)
+                    else:
+                        default_ids_str = "C001, C002, C003, C004, C005, C006"
+                else:
+                    st.info("※ キャリブレーターグループが自動検出されなかったため、手動入力してください。")
+                    default_ids_str = "C001, C002, C003, C004, C005, C006"
+
                 col3, col4 = st.columns(2)
                 with col3:
-                    cal_ids_str = st.text_input("キャリブレーターID (例: C001, C002, ...)", value="C001, C002, C003, C004, C005, C006")
+                    cal_ids_str = st.text_input("キャリブレーターID (カンマ区切り)", value=default_ids_str)
                 with col4:
                     cal_concs_str = st.text_input("キャリブレーター濃度 (例: 0.0, 5.3, ...)", value="0.0, 5.3, 14.0, 30.4, 56.7, 139.8")
 
-                curve_mode = st.selectbox("検量線モード", options=["piecewise_linear", "spline"], format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン")
-
-                # Points
-                st.subheader("測光ポイント設定")
+                # Points & Curve Modes
+                st.subheader("測光ポイント & 検量線モード設定")
                 st.info("計算式: 処理値(mAbs/min) = {(Abs_end - Abs_start) * 0.1} / {(Time_end - Time_start) / 60}")
 
                 # Get available time points
@@ -602,13 +713,15 @@ if st.session_state["df"] is not None:
 
                 col5, col6 = st.columns(2)
                 with col5:
-                    st.write("**デフォルト測光ポイント (Base)**")
+                    st.write("**デフォルト設定 (Base)**")
                     base_start_name = st.selectbox("開始時間 (Base)", options=list(time_opts.keys()), index=min(9, len(time_opts)-1), key="base_start")
                     base_end_name = st.selectbox("終了時間 (Base)", options=list(time_opts.keys()), index=min(19, len(time_opts)-1), key="base_end")
+                    curve_mode_base = st.selectbox("検量線モード (Base)", options=["piecewise_linear", "spline"], format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン", key="curve_mode_base")
                 with col6:
-                    st.write("**変更後測光ポイント (New)**")
+                    st.write("**変更後設定 (New)**")
                     new_start_name = st.selectbox("開始時間 (New)", options=list(time_opts.keys()), index=min(14, len(time_opts)-1), key="new_start")
                     new_end_name = st.selectbox("終了時間 (New)", options=list(time_opts.keys()), index=min(24, len(time_opts)-1), key="new_end")
+                    curve_mode_new = st.selectbox("検量線モード (New)", options=["piecewise_linear", "spline"], format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン", key="curve_mode_new")
 
                 if st.button("2. 解析実行", type="primary", key="btn_tc_analyze"):
                     cal_ids = [s.strip() for s in cal_ids_str.split(",") if s.strip()]
@@ -621,7 +734,7 @@ if st.session_state["df"] is not None:
                                 pass
 
                     if len(cal_ids) != len(cal_concs):
-                        st.error("キャリブレーターIDの数と濃度の数が一致しません。")
+                        st.error(f"キャリブレーターIDの数 ({len(cal_ids)}件) と濃度の数 ({len(cal_concs)}件) が一致しません。")
                     else:
                         with st.spinner("解析中..."):
                             import numpy as np
@@ -658,50 +771,69 @@ if st.session_state["df"] is not None:
                             cal_base_rates = [base_rates.get(cid, np.nan) for cid in cal_ids]
                             cal_new_rates = [new_rates.get(cid, np.nan) for cid in cal_ids]
 
-                            # Filter out missing cals
-                            valid_cals = [(r_new, c) for r_new, c in zip(cal_new_rates, cal_concs) if not np.isnan(r_new)]
-                            if len(valid_cals) < 2:
+                            # Filter out missing cals for New and Base
+                            valid_new_cals = [(r_new, c) for r_new, c in zip(cal_new_rates, cal_concs) if not np.isnan(r_new)]
+                            valid_base_cals = [(r_base, c) for r_base, c in zip(cal_base_rates, cal_concs) if not np.isnan(r_base)]
+
+                            if len(valid_new_cals) < 2 or len(valid_base_cals) < 2:
                                 st.error("有効なキャリブレーターデータが不足しています。")
                             else:
-                                valid_cals.sort(key=lambda x: x[0])
-                                x_cals = np.array([x[0] for x in valid_cals])
-                                y_cals = np.array([x[1] for x in valid_cals])
+                                valid_new_cals.sort(key=lambda x: x[0])
+                                x_cals_new = np.array([x[0] for x in valid_new_cals])
+                                y_cals_new = np.array([x[1] for x in valid_new_cals])
 
-                                def predict(x_val):
+                                valid_base_cals.sort(key=lambda x: x[0])
+                                x_cals_base = np.array([x[0] for x in valid_base_cals])
+                                y_cals_base = np.array([x[1] for x in valid_base_cals])
+
+                                def predict_new(x_val):
                                     if np.isnan(x_val): return np.nan
-                                    if curve_mode == "piecewise_linear":
-                                        return np.interp(x_val, x_cals, y_cals)
+                                    if curve_mode_new == "piecewise_linear":
+                                        return float(np.interp(x_val, x_cals_new, y_cals_new))
                                     else:
-                                        f = interp1d(x_cals, y_cals, kind='cubic', fill_value="extrapolate")
+                                        f = interp1d(x_cals_new, y_cals_new, kind='cubic', fill_value="extrapolate")
                                         return float(f(x_val))
+
+                                def predict_base(x_val):
+                                    if np.isnan(x_val): return np.nan
+                                    if curve_mode_base == "piecewise_linear":
+                                        return float(np.interp(x_val, x_cals_base, y_cals_base))
+                                    else:
+                                        f = interp1d(x_cals_base, y_cals_base, kind='cubic', fill_value="extrapolate")
+                                        return float(f(x_val))
+
+                                cal_id_to_conc = dict(zip(cal_ids, cal_concs))
 
                                 results = []
                                 for sid in base_rates.keys():
                                     b_r = base_rates[sid]
                                     n_r = new_rates[sid]
-                                    orig_conc = np.nan
-                                    # Try to find original conc in measurement_df
-                                    # measurement_df has "依頼No." or we use id_col
-                                    id_col = st.session_state.get("id_col", "SampleID")
-                                    # Check both SID and 依頼No. match
-                                    m_row = measurement_df[measurement_df["依頼No."].astype(str) == sid]
-                                    if not m_row.empty:
-                                        orig_conc = pd.to_numeric(m_row.iloc[0].get(tc_item_tab4, np.nan), errors='coerce')
+                                    
+                                    if is_calibrator(sid):
+                                        orig_conc = cal_id_to_conc.get(sid, np.nan)
+                                    else:
+                                        m_row = measurement_df[measurement_df["依頼No."].astype(str) == sid]
+                                        if not m_row.empty:
+                                            orig_conc = pd.to_numeric(m_row.iloc[0].get(tc_item_tab4, np.nan), errors='coerce')
+                                        else:
+                                            orig_conc = np.nan
 
-                                    new_conc = predict(n_r)
+                                    # Base検量線で再計算した濃度（プロット用）
+                                    base_recalc_conc = predict_base(b_r)
+                                    new_conc = predict_new(n_r)
                                     results.append({
                                         "依頼No.": sid,
                                         "元の処理値 (Base)": b_r,
                                         "新たな処理値 (New)": n_r,
-                                        "元の濃度 (Measurement)": orig_conc,
-                                        "新たな予測濃度": new_conc,
-                                        "濃度差 (New - Orig)": new_conc - orig_conc if not np.isnan(orig_conc) else np.nan
+                                        "装置測定値": orig_conc,
+                                        "Base再計算濃度": base_recalc_conc,
+                                        "New予測濃度": new_conc,
+                                        "濃度差 (New - Base)": new_conc - base_recalc_conc if not np.isnan(base_recalc_conc) else np.nan
                                     })
 
                                 res_df = pd.DataFrame(results)
 
-
-                                # 単位の取得 (安全のため、ファイルから再読み込み)
+                                # 単位の取得
                                 unit = ""
                                 parsed_dir = st.session_state.get("parsed_dir")
                                 if parsed_dir and (parsed_dir / "metadata.json").exists():
@@ -713,7 +845,6 @@ if st.session_state["df"] is not None:
                                             unit_dict = disk_metadata["measurement_units"]
                                             if tc_item_tab4 in unit_dict:
                                                 unit = f" ({unit_dict[tc_item_tab4]})"
-                                        st.info(f"単位情報は '{parsed_dir / 'metadata.json'}' から読み込みました。")
                                     except Exception as e:
                                         st.warning(f"metadata.jsonの読み込みに失敗しました: {e}")
                                 elif st.session_state.get("metadata") and "measurement_units" in st.session_state["metadata"]:
@@ -721,54 +852,75 @@ if st.session_state["df"] is not None:
                                     if tc_item_tab4 in unit_dict:
                                         unit = f" ({unit_dict[tc_item_tab4]})"
 
-                                # Valid base cals
-                                valid_base_cals = [(r_base, c) for r_base, c in zip(cal_base_rates, cal_concs) if not np.isnan(r_base)]
-                                valid_base_cals.sort(key=lambda x: x[1]) # sort by concentration
-                                x_base_cals = np.array([x[1] for x in valid_base_cals]) # Conc
-                                y_base_cals = np.array([x[0] for x in valid_base_cals]) # Rate
+                                # Valid base cals for plotting (sorted by conc)
+                                valid_base_cals_plot = [(r_base, c) for r_base, c in zip(cal_base_rates, cal_concs) if not np.isnan(r_base)]
+                                valid_base_cals_plot.sort(key=lambda x: x[1])
+                                x_base_cals_plot = np.array([x[1] for x in valid_base_cals_plot]) # Conc
+                                y_base_cals_plot = np.array([x[0] for x in valid_base_cals_plot]) # Rate
 
-                                # We want x=Conc, y=Rate
-                                # valid_cals is sorted by rate, let's sort by conc
-                                valid_cals.sort(key=lambda x: x[1])
-                                x_new_cals = np.array([x[1] for x in valid_cals]) # Conc
-                                y_new_cals = np.array([x[0] for x in valid_cals]) # Rate
+                                # Valid new cals for plotting (sorted by conc)
+                                valid_new_cals_plot = [(r_new, c) for r_new, c in zip(cal_new_rates, cal_concs) if not np.isnan(r_new)]
+                                valid_new_cals_plot.sort(key=lambda x: x[1])
+                                x_new_cals_plot = np.array([x[1] for x in valid_new_cals_plot]) # Conc
+                                y_new_cals_plot = np.array([x[0] for x in valid_new_cals_plot]) # Rate
 
                                 st.subheader("解析結果")
+
+                                mode_base_str = "折れ線" if curve_mode_base == "piecewise_linear" else "スプライン"
+                                mode_new_str = "折れ線" if curve_mode_new == "piecewise_linear" else "スプライン"
 
                                 # Plot Calibration Curve
                                 fig, ax = plt.subplots(figsize=(10, 6))
 
-                                # Plot Calibrators (Original)
-                                ax.plot(x_base_cals, y_base_cals, color='gray', marker='s', linestyle='-', label="Calibrators (Original)")
+                                # --- Calibrator markers (scatter) ---
+                                ax.scatter(x_base_cals_plot, y_base_cals_plot, color='gray', marker='s',
+                                           s=80, zorder=5, label="Calibrators (Base)")
+                                ax.scatter(x_new_cals_plot, y_new_cals_plot, color='black', marker='o',
+                                           s=40, zorder=6, label="Calibrators (New)")
 
-                                # Plot Calibrators (New Points)
-                                ax.plot(x_new_cals, y_new_cals, color='black', marker='o', linestyle='-', label="Calibrators (New)")
+                                # --- Base calibration curve ---
+                                if curve_mode_base == "piecewise_linear":
+                                    ax.plot(x_base_cals_plot, y_base_cals_plot, color='gray',
+                                            linestyle='-', linewidth=2, alpha=0.8, zorder=3,
+                                            label=f"Cal Curve (Base: {mode_base_str})")
+                                else:
+                                    rate_dense_base = np.linspace(y_base_cals_plot.min(), y_base_cals_plot.max(), 200)
+                                    conc_dense_base = [predict_base(r) for r in rate_dense_base]
+                                    ax.plot(conc_dense_base, rate_dense_base, color='gray',
+                                            linestyle='--', linewidth=2, alpha=0.8, zorder=3,
+                                            label=f"Cal Curve (Base: {mode_base_str})")
 
-                                # Plot a dense curve if spline for New Points
-                                if curve_mode == "spline":
-                                    # the 'predict' function gives conc from rate. To plot rate vs conc we need to map y -> predict(y).
-                                    # actually we have the inverse mapping since predict is (rate) -> conc.
-                                    # We can just plot the dense points for New
-                                    rate_dense = np.linspace(y_new_cals.min() - 0.5, y_new_cals.max() + 0.5, 200)
-                                    conc_dense = [predict(r) for r in rate_dense]
-                                    ax.plot(conc_dense, rate_dense, 'r--', alpha=0.6, label="Spline Fit (New)")
+                                # --- New calibration curve ---
+                                if curve_mode_new == "piecewise_linear":
+                                    ax.plot(x_new_cals_plot, y_new_cals_plot, color='red',
+                                            linestyle='-', linewidth=1.5, alpha=0.8, zorder=4,
+                                            label=f"Cal Curve (New: {mode_new_str})")
+                                else:
+                                    rate_dense_new = np.linspace(y_new_cals_plot.min(), y_new_cals_plot.max(), 200)
+                                    conc_dense_new = [predict_new(r) for r in rate_dense_new]
+                                    ax.plot(conc_dense_new, rate_dense_new, color='red',
+                                            linestyle='--', linewidth=1.5, alpha=0.8, zorder=4,
+                                            label=f"Cal Curve (New: {mode_new_str})")
 
-                                # Plot samples (Original)
-                                sample_x_orig = [r["元の濃度 (Measurement)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["元の濃度 (Measurement)"])]
-                                sample_y_orig = [r["元の処理値 (Base)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["元の濃度 (Measurement)"])]
-                                ax.scatter(sample_x_orig, sample_y_orig, color='gray', alpha=0.4, label="Samples (Original)")
+                                # --- Plot samples (Base) - predict_base で再計算した濃度を使用 ---
+                                sample_x_base = [r["Base再計算濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["Base再計算濃度"])]
+                                sample_y_base = [r["元の処理値 (Base)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["Base再計算濃度"])]
+                                ax.scatter(sample_x_base, sample_y_base, color='gray', alpha=0.5,
+                                           zorder=7, label="Samples (Base)")
 
-                                # Plot samples (New)
-                                sample_x_new = [r["新たな予測濃度"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["新たな予測濃度"])]
-                                sample_y_new = [r["新たな処理値 (New)"] for r in results if r["依頼No."] not in cal_ids and not np.isnan(r["新たな予測濃度"])]
-                                ax.scatter(sample_x_new, sample_y_new, color='blue', alpha=0.6, label="Samples (New)")
+                                # --- Plot samples (New) ---
+                                sample_x_new = [r["New予測濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
+                                sample_y_new = [r["新たな処理値 (New)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
+                                ax.scatter(sample_x_new, sample_y_new, color='blue', alpha=0.6,
+                                           zorder=8, label="Samples (New)")
 
                                 ax.set_xlabel(f"濃度{unit}")
                                 ax.set_ylabel("処理値 (mAbs/min)")
-                                ax.set_title(f"検量線 ({curve_mode})")
+                                ax.set_title(f"検量線 (Base: {mode_base_str}, New: {mode_new_str})")
                                 ax.grid(True, alpha=0.3)
                                 ax.legend()
                                 st.pyplot(fig)
                                 plt.close(fig)
 
                                 st.dataframe(res_df)
+
