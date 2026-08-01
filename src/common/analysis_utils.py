@@ -28,7 +28,7 @@ REGRESSION_LABELS = {
     "TheilSen": "Theil-Sen（ロバスト）",
     "PassingBablok": "Passing-Bablok（ノンパラメトリック）"
 }
-ID_COL_CANDIDATES = ["検体ID", "SampleID", "Sample ID", "ID"]
+ID_COL_CANDIDATES = ["SID", "検体ID", "SampleID", "Sample ID", "ID"]
 GROUP_COL_CANDIDATES = ["種別", "Group", "Type", "分類"]
 VALUE_PREFIXES = ("処方",)
 
