@@ -1,0 +1,42 @@
+{
+  "measurement_items": [
+    "TAT207",
+    "TAT1",
+    "TAT2",
+    "TAT5",
+    "TAT7",
+    "TAT8",
+    "TAT9",
+    "TAT10",
+    "TAT11",
+    "TAT12",
+    "TAT13"
+  ],
+  "measurement_units": {
+    "TAT207": "ng/mL",
+    "TAT1": "ng/mL",
+    "TAT2": "ng/mL",
+    "TAT5": "ng/mL",
+    "TAT7": "ng/mL",
+    "TAT8": "ng/mL",
+    "TAT9": "ng/mL",
+    "TAT10": "ng/mL",
+    "TAT11": "ng/mL",
+    "TAT12": "ng/mL",
+    "TAT13": "ng/mL"
+  },
+  "item_mapping": {
+    "37": "TAT207",
+    "41": "TAT1",
+    "42": "TAT2",
+    "45": "TAT5",
+    "47": "TAT7",
+    "48": "TAT8",
+    "49": "TAT9",
+    "50": "TAT10",
+    "51": "TAT11",
+    "52": "TAT12",
+    "53": "TAT13"
+  },
+  "source_csv": "260728_F07_製品Lot間の相関.csv"
+}
