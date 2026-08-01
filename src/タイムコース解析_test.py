@@ -39,6 +39,9 @@ PT_TIMES = {
 # キャリブレーターロット「408RBV」の表示値濃度 (Cal0 〜 Cal5)
 STD_CONCS = [0.0, 4.7, 13.8, 28.8, 61.9, 126.0]
 
+# イレギュラー補完用 Request-0001 (依頼No. 1, 2, 3)
+CAL5_EXTRA_REQUEST_IDS = ["0001", "0002", "0003", "1", "2", "3"]
+
 
 # ==============================================================================
 # 1. ヘルパー関数
@@ -74,63 +77,138 @@ def calc_rate_mabs_min(time_vals, abs_vals, pt_start, pt_end):
     if dt <= 0:
         return np.nan
 
-    # Rate (mAbs/min)
     return float(((a2 - a1) * 0.1) / (dt / 60.0))
 
 
-def load_calibrator_raw_curves_multi_pt(profile_df, clean_cal):
+def calc_representative_val_flexible(arr):
     """
-    全測光Ptパターンについて、全20項目のキャリブ点のRate (mAbs/min) を計算し、
-    表示値 [0.0, 4.7, 13.8, 28.8, 61.9, 126.0] との区間折れ線辞書を作成
+    測定数 n に合わせた代表値算出:
+    - n >= 3: 中央値 (Median)
+    - n == 2: 平均値 (Mean)
+    - n == 1: 生値そのまま
     """
+    n = len(arr)
+    if n >= 3:
+        return float(np.median(arr[:3]))
+    elif n == 2:
+        return float(np.mean(arr))
+    elif n == 1:
+        return float(arr[0])
+    return np.nan
+
+
+def load_calibrator_raw_curves_multi_pt(profile_df, clean_cal, meas_df):
+    """
+    「キャリブ生データ」シートの ^C\\d+$ ID に加え、
+    8/1測定の 'TAT CAL5' (Request-0001: 依頼No. 1, 2, 3) データを Cal5 (126.0 ng/mL) として補完。
+    全9測光Ptパターンについて Cal0〜Cal5 の区間折れ線補間辞書を作成。
+    """
+    c_only_cal = clean_cal[clean_cal["依頼No."].str.match(r"^C\d+$")].copy()
+    c_only_cal["c_num"] = c_only_cal["依頼No."].str.extract(r"C(\d+)")[0].astype(int)
+
     cal_curves_by_pat = {}
 
-    # clean_cal (キャリブ生データ) の C001~C357 行
-    # 依頼No. と 項目名 で各パターンの Rate を算出
     for pat_name, pt_s, pt_e in PT_PATTERNS:
         if pat_name == "装置生データ":
             continue
 
         item_curves = {}
-        for item_name, group in clean_cal.groupby("項目名"):
-            valid_group = group.dropna(subset=["処理値"]).copy()
-            valid_group["c_num"] = valid_group["依頼No."].str.extract(r"C?(\d+)")[0].astype(float)
-            valid_group = valid_group.sort_values("c_num")
-
-            # 原則 18行 (6レベル x 3回測定)
-            # 各行のプロファイル吸光度時系列を取得
+        for item_name in TARGET_ITEMS:
+            sub = c_only_cal[c_only_cal["項目名"] == item_name].sort_values("c_num").dropna(subset=["処理値"])
             rates = []
-            for _, r_row in valid_group.iterrows():
-                # 依頼No.に対応するプロファイルデータをprofile_dfから検索、またはシートの吸光度列を使用
-                req_no = str(r_row["依頼No."])
-                match_prof = profile_df[(profile_df["依頼No."].astype(str) == req_no) & (profile_df["項目名"].astype(str) == item_name)]
-                
-                if not match_prof.empty:
-                    m_sorted = match_prof.sort_values("時間")
-                    rate_v = calc_rate_mabs_min(m_sorted["時間"].values, m_sorted["吸光度"].values, pt_s, pt_e)
+
+            if not sub.empty:
+                for _, r_row in sub.iterrows():
+                    req_no = str(r_row["依頼No."])
+                    match_prof = profile_df[(profile_df["依頼No."].astype(str) == req_no) & (profile_df["項目名"].astype(str) == item_name)]
+
+                    if not match_prof.empty:
+                        m_sorted = match_prof.sort_values("時間")
+                        rate_v = calc_rate_mabs_min(m_sorted["時間"].values, m_sorted["吸光度"].values, pt_s, pt_e)
+                    else:
+                        rate_v = pd.to_numeric(r_row["処理値"], errors="coerce")
+
+                    if not np.isnan(rate_v):
+                        rates.append(rate_v)
+
+            # 各3行刻みでレベル代表値を集約 (Cal0 ~ Cal4/Cal5)
+            cal_rates = []
+            idx = 0
+            while idx < len(rates) and len(cal_rates) < 6:
+                rem = len(rates) - idx
+                if rem <= 2 and len(cal_rates) == 5:
+                    chunk = rates[idx:]
                 else:
-                    # デフォルト処理値 (10-20) の比率等
-                    rate_v = pd.to_numeric(r_row["処理値"], errors="coerce")
+                    chunk = rates[idx : idx + 3]
 
-                if not np.isnan(rate_v):
-                    rates.append(rate_v)
+                val = calc_representative_val_flexible(chunk)
+                if not np.isnan(val):
+                    cal_rates.append(val)
+                idx += len(chunk)
 
-            if len(rates) >= 6:
-                n_levels = min(6, len(rates) // 3)
-                cal_rates = []
-                for l in range(n_levels):
-                    sub_rates = rates[l * 3 : (l + 1) * 3]
-                    cal_rates.append(float(np.median(sub_rates)))
+            # もし Cal5 (6番目のレベル) が不足している場合、Request-0001 (TAT CAL5: 依頼No. 0001, 0002, 0003) から穴埋め
+            if len(cal_rates) < 6:
+                cal5_prof = profile_df[
+                    (profile_df["依頼No."].astype(str).str.zfill(4).isin(["0001", "0002", "0003"])) &
+                    (profile_df["項目名"].astype(str) == item_name)
+                ]
+                if not cal5_prof.empty:
+                    c5_rates = []
+                    for req_id_c5, c5_gdf in cal5_prof.groupby("依頼No."):
+                        c5_sorted = c5_gdf.sort_values("時間")
+                        rv = calc_rate_mabs_min(c5_sorted["時間"].values, c5_sorted["吸光度"].values, pt_s, pt_e)
+                        if not np.isnan(rv):
+                            c5_rates.append(rv)
 
-                if len(cal_rates) == 6:
-                    pairs = sorted(zip(cal_rates, STD_CONCS), key=lambda x: x[0])
-                    r_arr = np.array([p[0] for p in pairs])
-                    c_arr = np.array([p[1] for p in pairs])
-                    item_curves[item_name] = (r_arr, c_arr)
+                    if c5_rates:
+                        cal5_val = calc_representative_val_flexible(c5_rates)
+                        if not np.isnan(cal5_val):
+                            # Cal5 (126.0 ng/mL) として追加
+                            if len(cal_rates) == 5:
+                                cal_rates.append(cal5_val)
+                            elif len(cal_rates) < 5:
+                                while len(cal_rates) < 5:
+                                    cal_rates.append(np.nan)
+                                cal_rates.append(cal5_val)
+
+            # 有効なレベルと表示値濃度の割り当て
+            c_concs = STD_CONCS[:len(cal_rates)]
+
+            valid_pairs = [(r, c) for r, c in zip(cal_rates, c_concs) if not np.isnan(r) and not np.isnan(c)]
+            if len(valid_pairs) >= 2:
+                pairs = sorted(valid_pairs, key=lambda x: x[0])
+                r_arr = np.array([p[0] for p in pairs])
+                c_arr = np.array([p[1] for p in pairs])
+                item_curves[item_name] = (r_arr, c_arr)
 
         cal_curves_by_pat[pat_name] = item_curves
 
     return cal_curves_by_pat
+
+
+def interpolate_or_extrapolate(r_in, r_cals, c_cals):
+    """
+    区間折れ線補間 (Piecewise Linear) + 外挿処理
+    """
+    if np.isnan(r_in):
+        return np.nan
+
+    if r_cals[0] <= r_in <= r_cals[-1]:
+        return float(np.interp(r_in, r_cals, c_cals))
+
+    if r_in < r_cals[0]:
+        if len(r_cals) >= 2 and (r_cals[1] - r_cals[0]) != 0:
+            slope = (c_cals[1] - c_cals[0]) / (r_cals[1] - r_cals[0])
+            return float(c_cals[0] + slope * (r_in - r_cals[0]))
+        return float(c_cals[0])
+
+    if r_in > r_cals[-1]:
+        if len(r_cals) >= 2 and (r_cals[-1] - r_cals[-2]) != 0:
+            slope = (c_cals[-1] - c_cals[-2]) / (r_cals[-1] - r_cals[-2])
+            return float(c_cals[-1] + slope * (r_in - r_cals[-1]))
+        return float(c_cals[-1])
+
+    return float(np.interp(r_in, r_cals, c_cals))
 
 
 # ==============================================================================
@@ -159,8 +237,8 @@ def run_multi_pt_analysis():
     meas_df["SampleType"] = meas_df["属性"].apply(classify_sample_type)
     meas_df["依頼No."] = meas_df["依頼No."].astype(str)
 
-    print("Building calibration curves for all 9 photometric patterns...")
-    cal_curves_by_pat = load_calibrator_raw_curves_multi_pt(profile_df, clean_cal)
+    print("Building calibrator curves with Cal5 extra补完 (Request-0001) for all 9 patterns across ALL 20 items...")
+    cal_curves_by_pat = load_calibrator_raw_curves_multi_pt(profile_df, clean_cal, meas_df)
 
     # 各パターン別・検体別・項目別の Rate を事前に計算
     print("Calculating Rate (mAbs/min) for all samples across all patterns...")
@@ -181,13 +259,11 @@ def run_multi_pt_analysis():
     # 横長ワイドフォーマット DataFrame の構築
     # --------------------------------------------------------------------------
     print("Constructing Wide-Format matrix (1 row per sample, 180+ columns)...")
-    
-    # 1検体1行の基本情報
+
     samples_base = meas_df[["依頼No.", id_col, "SampleType", "属性"]].copy()
     samples_base.columns = ["依頼No.", "SID/検体名", "区分", "属性"]
     samples_base = samples_base.drop_duplicates(subset=["依頼No."]).reset_index(drop=True)
 
-    # 横長マトリクス用の辞書データを作成
     wide_data = []
 
     for _, s_row in samples_base.iterrows():
@@ -199,13 +275,11 @@ def run_multi_pt_analysis():
             "属性": s_row["属性"]
         }
 
-        # 元データの該当行
         m_row = meas_df[meas_df["依頼No."] == req_id]
         if m_row.empty:
             continue
         m_row = m_row.iloc[0]
 
-        # 20項目 x 9パターンの濃度再計算値を並べる
         for item in items_in_df:
             orig_val = pd.to_numeric(m_row.get(item, np.nan), errors="coerce")
 
@@ -215,20 +289,18 @@ def run_multi_pt_analysis():
                 if pat_name == "装置生データ":
                     row_dict[col_key] = orig_val
                 else:
-                    # 当該パターンの Rate を取得
                     df_p_rates = rates_by_pat[pat_name]
                     match_r = df_p_rates[(df_p_rates["依頼No."] == req_id) & (df_p_rates["項目名"] == item)]
-                    
+
                     if not match_r.empty:
                         rate_val = match_r.iloc[0]["Rate"]
                     else:
                         rate_val = np.nan
 
-                    # 検量線 (Piecewise Linear) 補間
                     curves = cal_curves_by_pat.get(pat_name, {})
                     if item in curves and not np.isnan(rate_val):
                         r_cals, c_cals = curves[item]
-                        recalc_val = float(np.interp(rate_val, r_cals, c_cals))
+                        recalc_val = interpolate_or_extrapolate(rate_val, r_cals, c_cals)
                     else:
                         recalc_val = np.nan
 
@@ -257,10 +329,7 @@ def run_multi_pt_analysis():
     OUTPUT_EXCEL.parent.mkdir(parents=True, exist_ok=True)
 
     with pd.ExcelWriter(OUTPUT_EXCEL, engine="openpyxl") as writer:
-        # === シート1: 測光Pt変動_濃度再計算マトリクス ===
         df_wide.to_excel(writer, sheet_name="測光Pt変動_濃度再計算マトリクス", index=False)
-
-        # === シート2: キャリブRate_Pt別 ===
         df_cal_rates_summary.to_excel(writer, sheet_name="キャリブRate_Pt別", index=False)
 
     print(f"\nSuccessfully generated Wide-Format Excel report: {OUTPUT_EXCEL}")
