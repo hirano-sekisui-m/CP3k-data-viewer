@@ -122,24 +122,21 @@ def load_parsed_data_for_app(parsed_dir):
 
     measurement_df = measurement_df.copy()
 
-    # SampleID列が存在しても中身が全てNone/nanの場合はSIDや依頼No.で上書きする
+    # SID列が存在しても中身が全てNone/nanの場合は他の候補や依頼No.で上書きする
     def _sid_col_is_empty(df):
-        if "SampleID" not in df.columns:
+        if "SID" not in df.columns:
             return True
-        s = df["SampleID"].astype(str).str.strip()
+        s = df["SID"].astype(str).str.strip()
         return s.isin(["None", "nan", "NaN", "", "<NA>"]).all()
 
     if _sid_col_is_empty(measurement_df):
-        if "SID" in measurement_df.columns:
-            measurement_df["SampleID"] = measurement_df["SID"].astype(str)
-        elif "依頼No." in measurement_df.columns:
-            measurement_df["SampleID"] = measurement_df["依頼No."].astype(str)
+        if "依頼No." in measurement_df.columns:
+            measurement_df["SID"] = measurement_df["依頼No."].astype(str)
         else:
-            measurement_df["SampleID"] = measurement_df.index.astype(str)
+            measurement_df["SID"] = measurement_df.index.astype(str)
 
-    # SIDもID候補に追加して確実に検出（ID_COL_CANDIDATESにSIDがない場合への対策）
-    id_col_candidates_ext = list(ID_COL_CANDIDATES) + ["SID", "依頼No."]
-    id_col = pick_col(measurement_df, id_col_candidates_ext, default="SampleID")
+    id_col_candidates_ext = ["SID"] + list(ID_COL_CANDIDATES) + ["依頼No."]
+    id_col = pick_col(measurement_df, id_col_candidates_ext, default="SID")
     group_col_raw = pick_col(measurement_df, GROUP_COL_CANDIDATES, default=None)
     group_col = normalize_group_col(measurement_df, group_col_raw)
 
@@ -813,7 +810,7 @@ if st.session_state["df"] is not None:
                                 # 乖離レベル判定準備
                                 ref_outlier_map = st.session_state.get("ref_outlier_map")
                                 metadata_session = st.session_state.get("metadata_enhanced") or st.session_state.get("metadata")
-                                id_col_session = st.session_state.get("id_col", "SampleID")
+                                id_col_session = st.session_state.get("id_col", "SID")
                                 id_mapping = {}
                                 if id_col_session and id_col_session != "依頼No." and id_col_session in measurement_df.columns:
                                     for _, r_row in measurement_df.iterrows():

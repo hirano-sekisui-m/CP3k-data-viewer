@@ -150,7 +150,7 @@ def _parse_measurement_table(lines):
 
         if (
             "依頼No." in line
-            and "SID" in line
+            and ("PID" in line or "SID" in line or "測定日" in line or "属性" in line)
         ):
             header_idx = i
             break
@@ -166,14 +166,19 @@ def _parse_measurement_table(lines):
 
         if (
             "依頼No." in lines[i]
-            and "項目名" in lines[i]
+            and ("項目名" in lines[i] or "測光" in lines[i] or "ﾌﾟﾛﾌｧｲﾙ" in lines[i])
         ):
             profile_header_idx = i
             break
 
-    measurement_lines = lines[
-        header_idx:profile_header_idx - 2
-    ]
+    if profile_header_idx is not None:
+        # プロファイルヘッダー直前の空行までを測定値領域とする
+        end_idx = profile_header_idx
+        while end_idx > header_idx and not lines[end_idx - 1].strip():
+            end_idx -= 1
+        measurement_lines = lines[header_idx:end_idx]
+    else:
+        measurement_lines = lines[header_idx:]
 
     df = pd.read_csv(
         StringIO("".join(measurement_lines)),
@@ -182,14 +187,16 @@ def _parse_measurement_table(lines):
 
     original_columns = list(df.columns)
 
-    fixed_cols = original_columns[:5]
+    # 固定列は 4列 ('依頼No.', 'PID'/'SID', '測定日', '属性')
+    num_fixed = 4
+    fixed_cols = original_columns[:num_fixed]
 
     measurement_items = []
     measurement_units = {}
 
     renamed_columns = fixed_cols.copy()
 
-    idx = 5
+    idx = num_fixed
 
     while idx < len(original_columns):
 
@@ -291,7 +298,7 @@ def _parse_profile_table(lines):
 
         if (
             "依頼No." in line
-            and "項目名" in line
+            and ("項目名" in line or "測光" in line or "ﾌﾟﾛﾌｧｲﾙ" in line)
         ):
             profile_header_idx = i
             break
@@ -354,9 +361,10 @@ def _parse_profile_table(lines):
             errors="coerce"
         )
 
-        item_mapping[
-            str(int(item_no))
-        ] = item_name
+        if not pd.isna(item_no):
+            item_mapping[
+                str(int(item_no))
+            ] = item_name
 
         time_tokens = token1[6:]
 
@@ -572,12 +580,129 @@ def _try_parse_json_obj(val):
     return None
 
 
+def merge_raw_csv_files(csv_paths):
+    """
+    複数の raw F12 CSV ファイルを1つの F12 CSV形式の行リスト(lines)に結合する。
+    
+    Parameters
+    ----------
+    csv_paths : list of Path or str
+        結合対象の CSV ファイルのパスのリスト
+        
+    Returns
+    -------
+    merged_lines : list of str
+    """
+    if not csv_paths:
+        return []
+
+    meas_header = None
+    meas_rows = []
+    profile_header = None
+    profile_rows = []
+
+    for path in csv_paths:
+        with open(path, "r", encoding="cp932", errors="replace") as f:
+            lines = f.readlines()
+
+        if not lines:
+            continue
+
+        # 測定値ヘッダーとプロファイルヘッダーの位置を特定
+        m_head_idx = None
+        p_head_idx = None
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if m_head_idx is None and ("依頼No." in stripped or "PID" in stripped or "測定日" in stripped):
+                m_head_idx = i
+            elif p_head_idx is None and ("項目名" in stripped and ("測光" in stripped or "ﾌﾟﾛﾌｧｲﾙ" in stripped or "処理値" in stripped)):
+                p_head_idx = i
+                break
+
+        if m_head_idx is None:
+            m_head_idx = 0
+
+        # セクション切り分け
+        if p_head_idx is not None:
+            raw_meas = lines[m_head_idx:p_head_idx]
+            raw_prof = lines[p_head_idx:]
+        else:
+            raw_meas = lines[m_head_idx:]
+            raw_prof = []
+
+        # 測定値セクションの処理
+        if raw_meas:
+            if meas_header is None:
+                meas_header = raw_meas[0]
+            # データ行のみ抽出 (ヘッダーと空行を除く)
+            for r in raw_meas[1:]:
+                if r.strip() and not ("依頼No." in r and "PID" in r):
+                    meas_rows.append(r)
+
+        # プロファイルセクションの処理
+        if raw_prof:
+            if profile_header is None:
+                profile_header = raw_prof[0]
+            # データ行のみ抽出 (ヘッダーと空行を除く)
+            for r in raw_prof[1:]:
+                if r.strip() and not ("項目名" in r and "測光" in r):
+                    profile_rows.append(r)
+
+    # 統合した F12 CSV 行リストを作成
+    merged_lines = []
+    if meas_header:
+        merged_lines.append(meas_header)
+    merged_lines.extend(meas_rows)
+
+    merged_lines.append("\n\n")
+
+    if profile_header:
+        merged_lines.append(profile_header)
+    merged_lines.extend(profile_rows)
+
+    return merged_lines
+
+
+def process_multiple_csvs(csv_paths, output_dir=None):
+    """
+    複数の生CSVファイルをマージして1つの parsed ディレクトリ
+    (measurement.parquet, profile.parquet, metadata.json) を生成する。
+    """
+    csv_paths = [Path(p) for p in csv_paths]
+    if not csv_paths:
+        raise ValueError("csv_paths が空です。")
+
+    merged_lines = merge_raw_csv_files(csv_paths)
+
+    measurement_df, metadata = _parse_measurement_table(merged_lines)
+    profile_df, item_mapping = _parse_profile_table(merged_lines)
+    metadata["item_mapping"] = item_mapping
+
+    first_csv = csv_paths[0]
+    if output_dir is None:
+        parent_name = first_csv.parent.name
+        parsed_root = first_csv.parents[2] / "parsed-data"
+        output_dir = parsed_root / parent_name
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    measurement_df.to_parquet(output_dir / "measurement.parquet", index=False)
+    profile_df.to_parquet(output_dir / "profile.parquet", index=False)
+
+    with open(output_dir / "metadata.json", "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+    return measurement_df, profile_df, metadata, output_dir
+
+
 def extract_sample_id(measurement_df, preferred_keys=None):
     """
     `measurement.parquet` から検体IDを抽出して Series を返す。
 
     優先的に探すキーは日本語/英語の候補を順に試す。
-    - measurement_df に直接 `検体ID`/`SampleID`/`ID` などの列があればそれを使う
+    - measurement_df に直接 `SID`/`検体ID`/`PID`/`SampleID` などの列があればそれを使う
     - `属性` 列が辞書または JSON 文字列を含む場合は内部のキーを探す
     - 見つからなければ先頭列を ID として扱う
 
@@ -586,12 +711,13 @@ def extract_sample_id(measurement_df, preferred_keys=None):
 
     if preferred_keys is None:
         preferred_keys = [
+            "SID",
             "検体ID",
+            "PID",
             "SampleID",
             "ID",
             "検体ﾊﾞｰｺｰﾄﾞ",
             "属性",
-            "SID",
             "依頼No."
         ]
 
@@ -607,7 +733,7 @@ def extract_sample_id(measurement_df, preferred_keys=None):
                 # もし辞書が含まれていれば内部キーを探す
                 if parsed.dropna().apply(lambda x: isinstance(x, dict)).any():
                     # 内部でよく使われるキーを試す
-                    inner_keys = ["検体ID", "SampleID", "ID"]
+                    inner_keys = ["SID", "検体ID", "PID", "SampleID", "ID"]
 
                     for ik in inner_keys:
                         try:
@@ -655,10 +781,10 @@ def detect_prescription_columns(measurement_df, metadata):
     return fallback
 
 
-def load_parsed_for_analysis(parsed_dir, sample_id_col_name="SampleID"):
+def load_parsed_for_analysis(parsed_dir, sample_id_col_name="SID"):
     """
     parsed ディレクトリ（例: data/parsed-data/260623_F12CSV_data）を読み込み、
-    ・`measurement_df` に `sample_id_col_name` 列を追加（検体ID）
+    ・`measurement_df` に `sample_id_col_name` 列（デフォルト "SID"）を追加
     ・検出された処方列のリストを返す
 
     Returns
