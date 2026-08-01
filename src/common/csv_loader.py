@@ -187,14 +187,16 @@ def _parse_measurement_table(lines):
 
     original_columns = list(df.columns)
 
-    fixed_cols = original_columns[:5]
+    # 固定列は 4列 ('依頼No.', 'PID'/'SID', '測定日', '属性')
+    num_fixed = 4
+    fixed_cols = original_columns[:num_fixed]
 
     measurement_items = []
     measurement_units = {}
 
     renamed_columns = fixed_cols.copy()
 
-    idx = 5
+    idx = num_fixed
 
     while idx < len(original_columns):
 
