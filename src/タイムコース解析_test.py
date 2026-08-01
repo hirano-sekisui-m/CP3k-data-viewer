@@ -9,26 +9,35 @@ import openpyxl
 # ==============================================================================
 PARSED_DIR = Path("data/parsed-data/240805_timecourse_merged")
 EXCEL_REF = Path("AI-chat/Antigravity/タイムコース解析/240805_乖離検体解析.xlsx")
-OUTPUT_EXCEL = Path("data/export/240805_タイムコース解析_再計算比較.xlsx")
+OUTPUT_EXCEL = Path("data/export/240805_タイムコース解析_測光ポイント変動再計算.xlsx")
 
 TARGET_ITEMS = [
     "TAT206", "TAT1", "TAT2", "TAT3", "TAT4", "TAT5", "TAT6", "TAT7", "TAT8", "TAT9",
     "TAT205", "TAT10", "TAT11", "TAT12", "TAT13", "TAT14", "TAT15", "TAT16", "TAT17", "TAT18"
 ]
 
-# 測光ポイント定義 (10Pt: 81.2秒, 20Pt: 171.2秒)
-TIME_10PT = 81.2
-TIME_20PT = 171.2
+# 評価する測光ポイントパターン (名称, 開始Pt, 終了Pt)
+PT_PATTERNS = [
+    ("2-12", 2, 12),
+    ("4-14", 4, 14),
+    ("6-16", 6, 16),
+    ("8-18", 8, 18),
+    ("10-20", 10, 20),
+    ("装置生データ", None, None),
+    ("2-21", 2, 21),
+    ("4-21", 4, 21),
+    ("6-21", 6, 21),
+]
 
-# キャリブレーターロット「408RBV」の表示値（標準濃度）
-CAL_STD_CONCS = {
-    "Cal0": 0.0,
-    "Cal1": 4.7,
-    "Cal2": 13.8,
-    "Cal3": 28.8,
-    "Cal4": 61.9,
-    "Cal5": 126.0
+# 各ポイントの定義秒数
+PT_TIMES = {
+    1: 0.0, 2: 9.2, 3: 18.0, 4: 27.2, 5: 36.0, 6: 45.2, 7: 54.0, 8: 63.2, 9: 72.0, 10: 81.2,
+    11: 90.0, 12: 99.2, 13: 108.0, 14: 117.2, 15: 126.0, 16: 135.2, 17: 144.0, 18: 153.2,
+    19: 162.0, 20: 171.2, 21: 180.0
 }
+
+# キャリブレーターロット「408RBV」の表示値濃度 (Cal0 〜 Cal5)
+STD_CONCS = [0.0, 4.7, 13.8, 28.8, 61.9, 126.0]
 
 
 # ==============================================================================
@@ -45,69 +54,89 @@ def classify_sample_type(name_str):
     return "SAMPLE"
 
 
-def calc_representative_val(series):
+def calc_rate_mabs_min(time_vals, abs_vals, pt_start, pt_end):
     """
-    キャリブレーター繰り返し測定の代表値計算:
-    - n >= 3: 中央値 (Median)
-    - n == 2: 平均値 (Mean)
-    - n == 1: そのままの値
+    指定ポイント (pt_start ~ pt_end) における吸光度変化率 mAbs/min を計算
     """
-    valid = series.dropna().astype(float)
-    n = len(valid)
-    if n >= 3:
-        return float(valid.median())
-    elif n == 2:
-        return float(valid.mean())
-    elif n == 1:
-        return float(valid.iloc[0])
-    return np.nan
+    if pt_start not in PT_TIMES or pt_end not in PT_TIMES:
+        return np.nan
+
+    target_t1 = PT_TIMES[pt_start]
+    target_t2 = PT_TIMES[pt_end]
+
+    idx_1 = np.argmin(np.abs(time_vals - target_t1))
+    idx_2 = np.argmin(np.abs(time_vals - target_t2))
+
+    t1, a1 = time_vals[idx_1], abs_vals[idx_1]
+    t2, a2 = time_vals[idx_2], abs_vals[idx_2]
+
+    dt = t2 - t1
+    if dt <= 0:
+        return np.nan
+
+    # Rate (mAbs/min)
+    return float(((a2 - a1) * 0.1) / (dt / 60.0))
 
 
-def load_reference_calibrator_data():
+def load_calibrator_raw_curves_multi_pt(profile_df, clean_cal):
     """
-    240805_乖離検体解析.xlsx から全20項目に対応するキャリブレーター測定値を読み込み、
-    408RBVロットの表示値 [0.0, 4.7, 13.8, 28.8, 61.9, 126.0] と結びつける
+    全測光Ptパターンについて、全20項目のキャリブ点のRate (mAbs/min) を計算し、
+    表示値 [0.0, 4.7, 13.8, 28.8, 61.9, 126.0] との区間折れ線辞書を作成
     """
-    if not EXCEL_REF.exists():
-        return {}
+    cal_curves_by_pat = {}
 
-    df_ref = pd.read_excel(EXCEL_REF, sheet_name="測定表", header=None)
-    
-    # 生食, TAT cal①〜⑤ の行から項目別の測定値を抽出
-    item_cal_meas = {}
-    col_names = [
-        "TAT206", "TAT1", "TAT2", "TAT3", "TAT4", "TAT5", "TAT6", "TAT7", "TAT8", "TAT9",
-        "TAT205", "TAT10", "TAT11", "TAT12", "TAT13", "TAT14", "TAT15", "TAT16", "TAT17", "TAT18"
-    ]
+    # clean_cal (キャリブ生データ) の C001~C357 行
+    # 依頼No. と 項目名 で各パターンの Rate を算出
+    for pat_name, pt_s, pt_e in PT_PATTERNS:
+        if pat_name == "装置生データ":
+            continue
 
-    cal_level_names = ["生理食塩水", "TAT cal①", "TAT cal②", "TAT cal③", "TAT cal④", "TAT cal⑤"]
-    std_concs = [0.0, 4.7, 13.8, 28.8, 61.9, 126.0]
+        item_curves = {}
+        for item_name, group in clean_cal.groupby("項目名"):
+            valid_group = group.dropna(subset=["処理値"]).copy()
+            valid_group["c_num"] = valid_group["依頼No."].str.extract(r"C?(\d+)")[0].astype(float)
+            valid_group = valid_group.sort_values("c_num")
 
-    for lvl_idx, cal_name in enumerate(cal_level_names):
-        std_c = std_concs[lvl_idx]
-        for i in range(len(df_ref)):
-            row = df_ref.iloc[i]
-            name = str(row[2]).strip() if pd.notna(row[2]) else ""
-            if name == cal_name:
-                for c_idx, item in enumerate(col_names, start=3):
-                    val = row[c_idx]
-                    if pd.notna(val) and isinstance(val, (int, float)):
-                        item_cal_meas.setdefault(item, []).append((float(val), std_c))
+            # 原則 18行 (6レベル x 3回測定)
+            # 各行のプロファイル吸光度時系列を取得
+            rates = []
+            for _, r_row in valid_group.iterrows():
+                # 依頼No.に対応するプロファイルデータをprofile_dfから検索、またはシートの吸光度列を使用
+                req_no = str(r_row["依頼No."])
+                match_prof = profile_df[(profile_df["依頼No."].astype(str) == req_no) & (profile_df["項目名"].astype(str) == item_name)]
+                
+                if not match_prof.empty:
+                    m_sorted = match_prof.sort_values("時間")
+                    rate_v = calc_rate_mabs_min(m_sorted["時間"].values, m_sorted["吸光度"].values, pt_s, pt_e)
+                else:
+                    # デフォルト処理値 (10-20) の比率等
+                    rate_v = pd.to_numeric(r_row["処理値"], errors="coerce")
 
-    # レベルごとの中央値(Median)/平均値を計算
-    item_cal_curve_data = {}
-    for item, pairs in item_cal_meas.items():
-        df_p = pd.DataFrame(pairs, columns=["meas_val", "std_conc"])
-        grouped = df_p.groupby("std_conc")["meas_val"].apply(calc_representative_val).reset_index()
-        item_cal_curve_data[item] = sorted(zip(grouped["meas_val"], grouped["std_conc"]), key=lambda x: x[0])
+                if not np.isnan(rate_v):
+                    rates.append(rate_v)
 
-    return item_cal_curve_data
+            if len(rates) >= 6:
+                n_levels = min(6, len(rates) // 3)
+                cal_rates = []
+                for l in range(n_levels):
+                    sub_rates = rates[l * 3 : (l + 1) * 3]
+                    cal_rates.append(float(np.median(sub_rates)))
+
+                if len(cal_rates) == 6:
+                    pairs = sorted(zip(cal_rates, STD_CONCS), key=lambda x: x[0])
+                    r_arr = np.array([p[0] for p in pairs])
+                    c_arr = np.array([p[1] for p in pairs])
+                    item_curves[item_name] = (r_arr, c_arr)
+
+        cal_curves_by_pat[pat_name] = item_curves
+
+    return cal_curves_by_pat
 
 
 # ==============================================================================
-# 2. メイン解析関数
+# 2. メイン解析・横長データ構築関数
 # ==============================================================================
-def run_timecourse_analysis():
+def run_multi_pt_analysis():
     print(f"Loading parsed data from: {PARSED_DIR}")
 
     meas_df = pd.read_parquet(PARSED_DIR / "measurement.parquet")
@@ -115,226 +144,129 @@ def run_timecourse_analysis():
     with open(PARSED_DIR / "metadata.json", "r", encoding="utf-8") as f:
         metadata = json.load(f)
 
+    # 参照Excel「キャリブ生データ」の読み込み
+    df_cal = pd.read_excel(EXCEL_REF, sheet_name="キャリブ生データ")
+    clean_cal = df_cal.dropna(subset=["依頼No.", "項目名"]).copy()
+    clean_cal["依頼No."] = clean_cal["依頼No."].astype(str).str.strip()
+    clean_cal["項目名"] = clean_cal["項目名"].astype(str).str.strip()
+    clean_cal["処理値"] = pd.to_numeric(clean_cal["処理値"], errors="coerce")
+
     id_col = "SID" if "SID" in meas_df.columns else "依頼No."
     items_in_df = [c for c in TARGET_ITEMS if c in meas_df.columns]
 
-    # 無効行・空行の除外
+    # 無効行の除外
     meas_df = meas_df[meas_df[id_col].notna() & (meas_df[id_col].astype(str).str.strip() != "None")].copy()
     meas_df["SampleType"] = meas_df["属性"].apply(classify_sample_type)
+    meas_df["依頼No."] = meas_df["依頼No."].astype(str)
 
-    # 参照キャリブレーター（408RBVロット表示値付き）の読み込み
-    cal_curve_ref = load_reference_calibrator_data()
+    print("Building calibration curves for all 9 photometric patterns...")
+    cal_curves_by_pat = load_calibrator_raw_curves_multi_pt(profile_df, clean_cal)
 
-    # --------------------------------------------------------------------------
-    # Part 1. シート1用: 装置測定値の分類・並び替えマッピング
-    # --------------------------------------------------------------------------
-    # 1-A. キャリブレーター (生データのCAL + 表示値情報)
-    cal_rows = []
-    cal_std_display_rows = [
-        {"区分": "キャリブレーター表示値(408RBV)", "レベル": "Cal0 (生食)", "標準濃度(ng/mL)": CAL_STD_CONCS["Cal0"]},
-        {"区分": "キャリブレーター表示値(408RBV)", "レベル": "Cal1", "標準濃度(ng/mL)": CAL_STD_CONCS["Cal1"]},
-        {"区分": "キャリブレーター表示値(408RBV)", "レベル": "Cal2", "標準濃度(ng/mL)": CAL_STD_CONCS["Cal2"]},
-        {"区分": "キャリブレーター表示値(408RBV)", "レベル": "Cal3", "標準濃度(ng/mL)": CAL_STD_CONCS["Cal3"]},
-        {"区分": "キャリブレーター表示値(408RBV)", "レベル": "Cal4", "標準濃度(ng/mL)": CAL_STD_CONCS["Cal4"]},
-        {"区分": "キャリブレーター表示値(408RBV)", "レベル": "Cal5", "標準濃度(ng/mL)": CAL_STD_CONCS["Cal5"]},
-    ]
-    df_cal_std_info = pd.DataFrame(cal_std_display_rows)
-
-    cal_df = meas_df[meas_df["SampleType"] == "CAL"].copy()
-    if not cal_df.empty:
-        for cal_name, group in cal_df.groupby("属性", sort=False):
-            r_dict = {"区分": "測定キャリブレーター", "検体名/ID": cal_name, "測定数(n)": len(group)}
-            for item in items_in_df:
-                r_dict[item] = calc_representative_val(group[item])
-            cal_rows.append(r_dict)
-    df_cal_summary = pd.DataFrame(cal_rows)
-
-    # 1-B. 精度管理検体 (QC)
-    qc_df = meas_df[meas_df["SampleType"] == "QC"].copy()
-    qc_rows = []
-    if not qc_df.empty:
-        for _, r in qc_df.iterrows():
-            r_dict = {
-                "区分": "精度管理検体(QC)",
-                "依頼No.": str(r.get("依頼No.", "")),
-                "SID/検体名": str(r.get(id_col, r.get("属性", ""))),
-                "属性": str(r.get("属性", ""))
-            }
-            for item in items_in_df:
-                r_dict[item] = pd.to_numeric(r.get(item, np.nan), errors="coerce")
-            qc_rows.append(r_dict)
-    df_qc_summary = pd.DataFrame(qc_rows)
-
-    # 1-C. 一般検体 (Samples)
-    sample_df = meas_df[meas_df["SampleType"] == "SAMPLE"].copy()
-    sample_rows = []
-    if not sample_df.empty:
-        for _, r in sample_df.iterrows():
-            r_dict = {
-                "区分": "一般検体",
-                "依頼No.": str(r.get("依頼No.", "")),
-                "SID/検体名": str(r.get(id_col, r.get("属性", ""))),
-                "属性": str(r.get("属性", ""))
-            }
-            for item in items_in_df:
-                r_dict[item] = pd.to_numeric(r.get(item, np.nan), errors="coerce")
-            sample_rows.append(r_dict)
-    df_sample_summary = pd.DataFrame(sample_rows)
-
-    # --------------------------------------------------------------------------
-    # Part 2. シート2用: 10Pt-20Pt タイムコース吸光度からの濃度再計算＆比較
-    # --------------------------------------------------------------------------
-    # Rate (mAbs/min) 計算: [(Abs_20Pt(171.2s) - Abs_10Pt(81.2s)) * 0.1] / [(171.2 - 81.2) / 60.0]
-    rate_records = []
-    for (req_id, item_name), gdf in profile_df.groupby(["依頼No.", "項目名"]):
-        gdf_sorted = gdf.sort_values("時間")
-        t_vals = gdf_sorted["時間"].values
-        a_vals = gdf_sorted["吸光度"].values
-
-        if len(t_vals) >= 2:
-            idx_10 = np.argmin(np.abs(t_vals - TIME_10PT))
-            idx_20 = np.argmin(np.abs(t_vals - TIME_20PT))
-
-            t10, a10 = t_vals[idx_10], a_vals[idx_10]
-            t20, a20 = t_vals[idx_20], a_vals[idx_20]
-
-            dt = t20 - t10
-            if dt > 0:
-                rate = ((a20 - a10) * 0.1) / (dt / 60.0)
-                rate_records.append({
-                    "依頼No.": str(req_id),
-                    "項目名": str(item_name),
-                    "Rate_10_20": rate
-                })
-
-    df_rates = pd.DataFrame(rate_records)
-
-    meas_with_rates = meas_df.copy()
-    meas_with_rates["依頼No."] = meas_with_rates["依頼No."].astype(str)
-
-    recalc_records = []
-
-    for item in items_in_df:
-        item_rates = df_rates[df_rates["項目名"] == item]
-        if item_rates.empty:
+    # 各パターン別・検体別・項目別の Rate を事前に計算
+    print("Calculating Rate (mAbs/min) for all samples across all patterns...")
+    rates_by_pat = {}
+    for pat_name, pt_s, pt_e in PT_PATTERNS:
+        if pat_name == "装置生データ":
             continue
 
-        item_df = pd.merge(meas_with_rates, item_rates, on="依頼No.", how="inner")
-        if item_df.empty:
-            continue
+        records = []
+        for (req_id, item_name), gdf in profile_df.groupby(["依頼No.", "項目名"]):
+            gdf_sorted = gdf.sort_values("時間")
+            rate = calc_rate_mabs_min(gdf_sorted["時間"].values, gdf_sorted["吸光度"].values, pt_s, pt_e)
+            records.append({"依頼No.": str(req_id), "項目名": str(item_name), "Rate": rate})
 
-        # 検量線フィッティング関数の構築 (Rate mAbs/min -> 濃度 ng/mL)
-        # 参照Excelのキャリブ測定データと表示値 [0.0, 4.7, 13.8, 28.8, 61.9, 126.0] を使用
-        if item in cal_curve_ref and len(cal_curve_ref[item]) >= 2:
-            curve_pairs = cal_curve_ref[item]
-            # 測定値(x: meas_val) と 表示値濃度(y: std_conc)
-            x_cals = np.array([p[0] for p in curve_pairs])
-            y_cals = np.array([p[1] for p in curve_pairs])
-
-            # 生データの処理値 Rate と 測定値の変換比率を算出し、再計算濃度を推計
-            def predict_conc(rate_in, orig_val_in):
-                if np.isnan(orig_val_in):
-                    return np.nan
-                # 原点を通る比例フィッティングまたは単調補間
-                return float(orig_val_in)
-
-            # 各項目の Rate と 装置測定値から精度高く濃度を再評価
-            valid_p = item_df.dropna(subset=["Rate_10_20", item])
-            if len(valid_p) >= 2:
-                x_r = valid_p["Rate_10_20"].values
-                y_c = valid_p[item].values
-                slope, intercept = np.polyfit(x_r, y_c, 1)
-
-                def predict_conc(rate_in, orig_val_in):
-                    if np.isnan(rate_in):
-                        return np.nan
-                    return float(slope * rate_in + intercept)
-        else:
-            valid_p = item_df.dropna(subset=["Rate_10_20", item])
-            if len(valid_p) >= 2:
-                x_r = valid_p["Rate_10_20"].values
-                y_c = valid_p[item].values
-                slope, intercept = np.polyfit(x_r, y_c, 1)
-
-                def predict_conc(rate_in, orig_val_in):
-                    if np.isnan(rate_in):
-                        return np.nan
-                    return float(slope * rate_in + intercept)
-            else:
-                def predict_conc(rate_in, orig_val_in):
-                    return np.nan
-
-        # 各検体の濃度再計算と差分算出
-        for _, row in item_df.iterrows():
-            orig_val = pd.to_numeric(row.get(item, np.nan), errors="coerce")
-            rate_val = row.get("Rate_10_20", np.nan)
-            recalc_val = predict_conc(rate_val, orig_val)
-            diff = recalc_val - orig_val if (not np.isnan(recalc_val) and not np.isnan(orig_val)) else np.nan
-            rel_err_pct = (diff / abs(orig_val) * 100) if (not np.isnan(diff) and orig_val != 0) else np.nan
-
-            recalc_records.append({
-                "項目名": item,
-                "依頼No.": str(row.get("依頼No.", "")),
-                "SID/検体名": str(row.get(id_col, row.get("属性", ""))),
-                "区分": str(row.get("SampleType", "")),
-                "属性": str(row.get("属性", "")),
-                "処理値(10Pt[81.2s]-20Pt[171.2s] mAbs/min)": rate_val,
-                "装置測定値": orig_val,
-                "再計算濃度": recalc_val,
-                "差分 (再計算 - 装置値)": diff,
-                "相対誤差 (%)": rel_err_pct
-            })
-
-    df_recalc_all = pd.DataFrame(recalc_records)
+        rates_by_pat[pat_name] = pd.DataFrame(records)
 
     # --------------------------------------------------------------------------
-    # Part 3. Excel 書き出し (2シート構成)
+    # 横長ワイドフォーマット DataFrame の構築
+    # --------------------------------------------------------------------------
+    print("Constructing Wide-Format matrix (1 row per sample, 180+ columns)...")
+    
+    # 1検体1行の基本情報
+    samples_base = meas_df[["依頼No.", id_col, "SampleType", "属性"]].copy()
+    samples_base.columns = ["依頼No.", "SID/検体名", "区分", "属性"]
+    samples_base = samples_base.drop_duplicates(subset=["依頼No."]).reset_index(drop=True)
+
+    # 横長マトリクス用の辞書データを作成
+    wide_data = []
+
+    for _, s_row in samples_base.iterrows():
+        req_id = s_row["依頼No."]
+        row_dict = {
+            "依頼No.": req_id,
+            "SID/検体名": s_row["SID/検体名"],
+            "区分": s_row["区分"],
+            "属性": s_row["属性"]
+        }
+
+        # 元データの該当行
+        m_row = meas_df[meas_df["依頼No."] == req_id]
+        if m_row.empty:
+            continue
+        m_row = m_row.iloc[0]
+
+        # 20項目 x 9パターンの濃度再計算値を並べる
+        for item in items_in_df:
+            orig_val = pd.to_numeric(m_row.get(item, np.nan), errors="coerce")
+
+            for pat_name, pt_s, pt_e in PT_PATTERNS:
+                col_key = f"{item}_{pat_name}"
+
+                if pat_name == "装置生データ":
+                    row_dict[col_key] = orig_val
+                else:
+                    # 当該パターンの Rate を取得
+                    df_p_rates = rates_by_pat[pat_name]
+                    match_r = df_p_rates[(df_p_rates["依頼No."] == req_id) & (df_p_rates["項目名"] == item)]
+                    
+                    if not match_r.empty:
+                        rate_val = match_r.iloc[0]["Rate"]
+                    else:
+                        rate_val = np.nan
+
+                    # 検量線 (Piecewise Linear) 補間
+                    curves = cal_curves_by_pat.get(pat_name, {})
+                    if item in curves and not np.isnan(rate_val):
+                        r_cals, c_cals = curves[item]
+                        recalc_val = float(np.interp(rate_val, r_cals, c_cals))
+                    else:
+                        recalc_val = np.nan
+
+                    row_dict[col_key] = recalc_val
+
+        wide_data.append(row_dict)
+
+    df_wide = pd.DataFrame(wide_data)
+
+    # --------------------------------------------------------------------------
+    # シート2用: キャリブRate一覧 (パターン別) の構築
+    # --------------------------------------------------------------------------
+    cal_rate_summary_rows = []
+    for pat_name, curves in cal_curves_by_pat.items():
+        for item, (r_cals, c_cals) in curves.items():
+            r_dict = {"測光Ptパターン": pat_name, "項目名": item}
+            for idx, (r_v, c_v) in enumerate(zip(r_cals, c_cals)):
+                r_dict[f"Cal{idx}_表示値({c_v}ng/mL)"] = r_v
+            cal_rate_summary_rows.append(r_dict)
+
+    df_cal_rates_summary = pd.DataFrame(cal_rate_summary_rows)
+
+    # --------------------------------------------------------------------------
+    # Excel ファイル出力 (2シート)
     # --------------------------------------------------------------------------
     OUTPUT_EXCEL.parent.mkdir(parents=True, exist_ok=True)
 
     with pd.ExcelWriter(OUTPUT_EXCEL, engine="openpyxl") as writer:
-        # === シート1: 装置測定値_並び替え ===
-        start_row = 0
+        # === シート1: 測光Pt変動_濃度再計算マトリクス ===
+        df_wide.to_excel(writer, sheet_name="測光Pt変動_濃度再計算マトリクス", index=False)
 
-        # セクション0: キャリブレーターロット表示値(408RBV)
-        pd.DataFrame([["【0. キャリブレーターロット「408RBV」表示値 (標準濃度)】"]]).to_excel(
-            writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False, header=False
-        )
-        start_row += 1
-        df_cal_std_info.to_excel(writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False)
-        start_row += len(df_cal_std_info) + 3
+        # === シート2: キャリブRate_Pt別 ===
+        df_cal_rates_summary.to_excel(writer, sheet_name="キャリブRate_Pt別", index=False)
 
-        # セクション1: 測定キャリブレーター
-        pd.DataFrame([["【1. 測定キャリブレーター代表値 (n>=3:Median, n=2:Mean)】"]]).to_excel(
-            writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False, header=False
-        )
-        start_row += 1
-        if not df_cal_summary.empty:
-            df_cal_summary.to_excel(writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False)
-            start_row += len(df_cal_summary) + 3
-
-        # セクション2: 精度管理検体
-        pd.DataFrame([["【2. 精度管理検体 (QC: パネル・コントロール)】"]]).to_excel(
-            writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False, header=False
-        )
-        start_row += 1
-        df_qc_summary.to_excel(writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False)
-        start_row += len(df_qc_summary) + 3
-
-        # セクション3: 一般検体
-        pd.DataFrame([["【3. 一般検体 (ボランティア・病院検体)】"]]).to_excel(
-            writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False, header=False
-        )
-        start_row += 1
-        df_sample_summary.to_excel(writer, sheet_name="装置測定値_並び替え", startrow=start_row, index=False)
-
-        # === シート2: 再計算濃度_測光Pt10-20 ===
-        df_recalc_all.to_excel(writer, sheet_name="再計算濃度_測光Pt10-20", index=False)
-
-    print(f"\nSuccessfully generated Excel report: {OUTPUT_EXCEL}")
-    print(f"Sheet 1 (装置測定値_並び替え): {len(df_cal_summary)} cals, {len(df_qc_summary)} QCs, {len(df_sample_summary)} samples")
-    print(f"Sheet 2 (再計算濃度_測光Pt10-20): {len(df_recalc_all)} rows evaluated across {len(items_in_df)} items")
+    print(f"\nSuccessfully generated Wide-Format Excel report: {OUTPUT_EXCEL}")
+    print(f"Sheet 1 (測光Pt変動_濃度再計算マトリクス): {df_wide.shape[0]} rows x {df_wide.shape[1]} columns")
+    print(f"Sheet 2 (キャリブRate_Pt別): {len(df_cal_rates_summary)} rows")
 
 
 if __name__ == "__main__":
-    run_timecourse_analysis()
+    run_multi_pt_analysis()
