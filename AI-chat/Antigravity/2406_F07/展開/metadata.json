@@ -1,0 +1,44 @@
+{
+  "source_csv_files": [
+    "240624 F07---TAT高値検体-スクリ－ニング (1～40).csv",
+    "240625 F07 TAT高値-スクリ－ニング (No.41～150) CSV_data.csv",
+    "CSV_data_F07_20240604074000.csv"
+  ],
+  "source_encodings": {
+    "240624 F07---TAT高値検体-スクリ－ニング (1～40).csv": "cp932",
+    "240625 F07 TAT高値-スクリ－ニング (No.41～150) CSV_data.csv": "cp932",
+    "CSV_data_F07_20240604074000.csv": "utf-8-sig"
+  },
+  "measurement_items": [
+    "TAT206",
+    "TAT1",
+    "TAT2",
+    "TAT3",
+    "TAT4",
+    "TAT5",
+    "TAT6"
+  ],
+  "measurement_units": {
+    "TAT206": "ng/mL",
+    "TAT1": "ng/mL",
+    "TAT2": "ng/mL",
+    "TAT3": "ng/mL",
+    "TAT4": "ng/mL",
+    "TAT5": "ng/mL",
+    "TAT6": "ng/mL"
+  },
+  "item_mapping": {
+    "46": "TAT5",
+    "47": "TAT6",
+    "41": "TAT206",
+    "42": "TAT1",
+    "44": "TAT3",
+    "43": "TAT2"
+  },
+  "exported_at": "2026-08-03 10:09:40",
+  "errors": [],
+  "row_counts": {
+    "measurement": 285,
+    "profile": 23352
+  }
+}
