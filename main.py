@@ -28,6 +28,15 @@ from common.analysis_utils import (
     SHEET_OUTLIERS, SHEET_SAMPLE_METRICS,
     OUT_SUFFIX, ID_COL_CANDIDATES, GROUP_COL_CANDIDATES, VALUE_PREFIXES
 )
+from common.calibration_manager import (
+    is_calibrator as cm_is_calibrator,
+    detect_calibrators, build_cal_level_table,
+    calc_rate, calc_rates_batch, aggregate_cal_rates,
+    build_calibration_curve, predict_concentration,
+    recalculate_all_samples, save_cal_config, load_cal_config,
+    get_cal_level_detail_table, get_cal_level_summary_table,
+    compare_two_recalc_results,
+)
 
 setup_japanese_font()
 
@@ -196,7 +205,7 @@ st.divider()
 if st.session_state["df"] is not None:
     value_cols = st.session_state["value_cols"]
 
-    tab1, tab2, tab3, tab4 = st.tabs(["相関解析", "Excel出力", "タイムコース表示", "タイムコース解析"])
+    tab1, tab2, tab3, tab4 = st.tabs(["相関解析", "Excel出力", "タイムコース表示", "キャリブレーション解析"])
 
     # ----------------------------------------------------
     # TAB 1: 相関解析
@@ -652,10 +661,10 @@ if st.session_state["df"] is not None:
                     st.pyplot(fig)
                     plt.close(fig)
     # ----------------------------------------------------
-    # TAB 4: タイムコース解析
+    # TAB 4: キャリブレーション解析 (ステップ制)
     # ----------------------------------------------------
     with tab4:
-        st.header("タイムコース解析（吸光度からの濃度再計算）")
+        st.header("キャリブレーション解析（検量線構築 & 濃度再計算）")
         profile_df = st.session_state["profile_df"]
         measurement_df = st.session_state["df"]
 
@@ -664,394 +673,671 @@ if st.session_state["df"] is not None:
             if not items:
                 st.warning("プロファイルデータに項目名がありません。")
             else:
-                col1, col2 = st.columns(2)
-                with col1:
-                    tc_item_tab4 = st.selectbox("解析項目", options=items, key="tc_item_tab4")
+                tc_item_tab4 = st.selectbox("解析項目", options=items, key="tc_item_tab4")
 
-                # Detect calibrator groups
-                cal_groups = find_calibrator_groups(measurement_df, tc_item_tab4)
+                # === Session state for Cal config ===
+                if "cal_config" not in st.session_state:
+                    st.session_state["cal_config"] = None
+                if "cal_patterns" not in st.session_state:
+                    st.session_state["cal_patterns"] = None
+                if "cal_results" not in st.session_state:
+                    st.session_state["cal_results"] = None
 
-                st.subheader("キャリブレーター設定")
-                if cal_groups:
-                    group_opts = {}
-                    for i, g in enumerate(cal_groups):
-                        label = f"グループ {i+1}: {g['ids'][0]} ~ {g['ids'][-1]} ({len(g['ids'])}点データ)"
-                        group_opts[label] = g['ids']
-                    group_opts["カスタム入力 (手動指定)"] = None
+                # ============================================================
+                # Step 1: キャリブレーター登録
+                # ============================================================
+                st.subheader("Step 1: キャリブレーター登録")
 
-                    selected_group_label = st.selectbox(
-                        "キャリブレーターグループ選択",
-                        options=list(group_opts.keys()),
-                        index=0
+                col_mode, col_lot = st.columns(2)
+                with col_mode:
+                    cal_detect_mode = st.radio(
+                        "キャリブレーター認識方法",
+                        ["ID自動検出 (C+数字)", "属性キーワード検出", "手動指定"],
+                        key="cal_detect_mode",
+                        horizontal=True,
                     )
-                    selected_ids = group_opts[selected_group_label]
+                with col_lot:
+                    # ロードされた設定があれば初期値に使用
+                    loaded_cfg = st.session_state.get("loaded_cal_config")
+                    default_lot = loaded_cfg.get("lot_name", "Lot-A") if loaded_cfg else "Lot-A"
+                    lot_name = st.text_input("ロット名（任意ラベル）", value=default_lot, key="lot_name")
 
-                    if selected_ids is not None:
-                        default_ids_str = ", ".join(selected_ids)
-                    else:
-                        default_ids_str = "C001, C002, C003, C004, C005, C006"
+                # Detect calibrator IDs
+                mode_map = {"ID自動検出 (C+数字)": "id_pattern", "属性キーワード検出": "attribute", "手動指定": "id_pattern"}
+                detect_mode = mode_map[cal_detect_mode]
+
+                attr_keywords = None
+                if cal_detect_mode == "属性キーワード検出":
+                    kw_input = st.text_input("検索キーワード (カンマ区切り)", "CAL, cal, キャリブ, STD, 標準", key="cal_kw")
+                    attr_keywords = [k.strip() for k in kw_input.split(",") if k.strip()]
+
+                if cal_detect_mode != "手動指定":
+                    all_detected_ids = detect_calibrators(
+                        measurement_df, profile_df, tc_item_tab4,
+                        mode=detect_mode, keywords=attr_keywords
+                    )
+                    # 複数ロット混在対策: 対象IDをマルチセレクトで絞り込み可能に
+                    selected_ids = st.multiselect(
+                        f"対象とするキャリブレーターIDを選択 ({len(all_detected_ids)}件検出)",
+                        options=all_detected_ids,
+                        default=all_detected_ids,
+                        help="ロットAやロットBが混在している場合、対象とするロットのIDだけを選択してください。"
+                    )
+                    detected_ids = selected_ids
                 else:
-                    st.info("※ キャリブレーターグループが自動検出されなかったため、手動入力してください。")
-                    default_ids_str = "C001, C002, C003, C004, C005, C006"
+                    manual_ids = st.text_input("キャリブレーターID (カンマ区切り)", "C001, C002, C003", key="cal_manual_ids")
+                    detected_ids = [s.strip() for s in manual_ids.split(",") if s.strip()]
 
-                col3, col4 = st.columns(2)
-                with col3:
-                    cal_ids_str = st.text_input("キャリブレーターID (カンマ区切り)", value=default_ids_str)
-                with col4:
-                    cal_concs_str = st.text_input("キャリブレーター濃度 (例: 0.0, 5.3, ...)", value="0.0, 5.3, 14.0, 30.4, 56.7, 139.8")
+                col_lv, col_rep, col_agg = st.columns(3)
+                with col_lv:
+                    default_n_levels = loaded_cfg.get("n_levels", min(6, max(2, len(detected_ids)))) if loaded_cfg else min(6, max(2, len(detected_ids)))
+                    n_levels = st.number_input("レベル数", min_value=2, max_value=12, value=int(default_n_levels), key="n_levels")
+                with col_rep:
+                    default_n_reps = loaded_cfg.get("n_replicates", max(1, len(detected_ids) // max(int(n_levels), 1))) if loaded_cfg else max(1, len(detected_ids) // max(int(n_levels), 1))
+                    n_reps = st.number_input("各レベルの測定回数 (n数)", min_value=1, max_value=10, value=int(default_n_reps), key="n_reps")
+                with col_agg:
+                    default_agg = loaded_cfg.get("aggregation", "median") if loaded_cfg else "median"
+                    agg_method = st.selectbox("代表値算出法", ["median", "mean"], index=0 if default_agg == "median" else 1,
+                                              format_func=lambda x: "中央値" if x == "median" else "平均値", key="agg_method")
 
-                # Points & Curve Modes
-                st.subheader("測光ポイント & 検量線モード設定")
-                st.info("計算式: 処理値(mAbs/min) = {(Abs_end - Abs_start) * 0.1} / {(Time_end - Time_start) / 60}")
+                # Build level table
+                level_table, level_warning = build_cal_level_table(detected_ids, n_levels, n_reps)
+                if level_warning:
+                    st.warning(f"⚠ {level_warning}")
 
-                # Get available time points
-                times = sorted(profile_df[profile_df["項目名"] == tc_item_tab4]["時間"].unique())
-                time_opts = {f"{t:.1f}s": t for t in times}
+                # Editable concentration + ID table via st.data_editor
+                cal_edit_rows = []
+                loaded_concs = loaded_cfg.get("concentrations", []) if loaded_cfg else []
+                for i in range(n_levels):
+                    ids_str = ", ".join(level_table[i]) if i < len(level_table) else ""
+                    init_conc = loaded_concs[i] if i < len(loaded_concs) else 0.0
+                    cal_edit_rows.append({
+                        "レベル": f"Cal {i}",
+                        "表示値濃度": float(init_conc),
+                        "依頼No. (n回分)": ids_str,
+                    })
+                cal_edit_df = pd.DataFrame(cal_edit_rows)
 
-                col5, col6 = st.columns(2)
-                with col5:
-                    st.write("**デフォルト設定 (Base)**")
-                    base_start_name = st.selectbox("開始時間 (Base)", options=list(time_opts.keys()), index=min(9, len(time_opts)-1), key="base_start")
-                    base_end_name = st.selectbox("終了時間 (Base)", options=list(time_opts.keys()), index=min(19, len(time_opts)-1), key="base_end")
-                    curve_mode_base = st.selectbox("検量線モード (Base)", options=["piecewise_linear", "spline"], format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン", key="curve_mode_base")
-                with col6:
-                    st.write("**変更後設定 (New)**")
-                    new_start_name = st.selectbox("開始時間 (New)", options=list(time_opts.keys()), index=min(14, len(time_opts)-1), key="new_start")
-                    new_end_name = st.selectbox("終了時間 (New)", options=list(time_opts.keys()), index=min(24, len(time_opts)-1), key="new_end")
-                    curve_mode_new = st.selectbox("検量線モード (New)", options=["piecewise_linear", "spline"], format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン", key="curve_mode_new")
-
-                show_tc_outliers_tab4 = st.checkbox(
-                    "プロット図で乖離・非乖離を色分け表示",
-                    value=True,
-                    help="相関解析で判定された乖離レベルに基づき、New予測濃度のサンプル点を強乖離(赤)、乖離(オレンジ)、軽度乖離(黄)、非乖離(青)に色分け表示します。"
+                st.markdown("**キャリブレーター定義テーブル** — 表示値濃度を入力してください")
+                edited_cal_df = st.data_editor(
+                    cal_edit_df,
+                    column_config={
+                        "レベル": st.column_config.TextColumn(disabled=True),
+                        "表示値濃度": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
+                        "依頼No. (n回分)": st.column_config.TextColumn(),
+                    },
+                    use_container_width=True,
+                    num_rows="fixed",
+                    key="cal_editor",
                 )
 
-                if st.button("2. 解析実行", type="primary", key="btn_tc_analyze"):
-                    cal_ids = [s.strip() for s in cal_ids_str.split(",") if s.strip()]
-                    cal_concs = []
-                    for s in cal_concs_str.split(","):
-                        if s.strip():
-                            try:
-                                cal_concs.append(float(s.strip()))
-                            except ValueError:
-                                pass
+                # Save / Load buttons
+                col_save, col_load = st.columns(2)
+                with col_save:
+                    if st.button("💾 Cal設定をJSONに保存", key="save_cal"):
+                        parsed_dir = st.session_state.get("parsed_dir")
+                        if parsed_dir:
+                            config = {
+                                "lot_name": lot_name,
+                                "item_name": tc_item_tab4,
+                                "n_levels": n_levels,
+                                "n_replicates": n_reps,
+                                "concentrations": edited_cal_df["表示値濃度"].tolist(),
+                                "levels": [
+                                    {"level": i, "ids": [s.strip() for s in edited_cal_df.iloc[i]["依頼No. (n回分)"].split(",") if s.strip()]}
+                                    for i in range(len(edited_cal_df))
+                                ],
+                                "aggregation": agg_method,
+                                "detection_mode": detect_mode,
+                            }
+                            save_path = Path(parsed_dir) / f"cal_config_{tc_item_tab4}_{lot_name}.json"
+                            save_cal_config(config, save_path)
+                            st.success(f"保存完了: {save_path.name}")
+                with col_load:
+                    parsed_dir = st.session_state.get("parsed_dir")
+                    if parsed_dir:
+                        cal_jsons = sorted(list(Path(parsed_dir).glob(f"cal_config_{tc_item_tab4}_*.json")))
+                        if not cal_jsons:
+                            cal_jsons = sorted(list(Path(parsed_dir).glob("cal_config_*.json")))
+                        if cal_jsons:
+                            selected_json = st.selectbox("保存済みJSONから読込", [p.name for p in cal_jsons], key="load_cal_json")
+                            if st.button("📂 読み込み", key="load_cal_btn"):
+                                loaded = load_cal_config(Path(parsed_dir) / selected_json)
+                                st.session_state["loaded_cal_config"] = loaded
+                                st.success(f"読み込み完了: {selected_json}")
+                                st.rerun()
 
-                    if len(cal_ids) != len(cal_concs):
-                        st.error(f"キャリブレーターIDの数 ({len(cal_ids)}件) と濃度の数 ({len(cal_concs)}件) が一致しません。")
+                if st.button("▶ Step 1 完了: Calを登録", type="primary", key="btn_cal_register"):
+                    concentrations = edited_cal_df["表示値濃度"].tolist()
+                    final_level_table = []
+                    for i in range(len(edited_cal_df)):
+                        ids = [s.strip() for s in edited_cal_df.iloc[i]["依頼No. (n回分)"].split(",") if s.strip()]
+                        final_level_table.append(ids)
+
+                    if all(c == 0.0 for c in concentrations):
+                        st.error("表示値濃度が全て0.0です。各レベルの濃度を入力してください。")
                     else:
-                        with st.spinner("解析中..."):
-                            import numpy as np
-                            from scipy.interpolate import interp1d
+                        st.session_state["cal_config"] = {
+                            "lot_name": lot_name,
+                            "item_name": tc_item_tab4,
+                            "n_levels": n_levels,
+                            "n_replicates": n_reps,
+                            "concentrations": concentrations,
+                            "level_table": final_level_table,
+                            "aggregation": agg_method,
+                        }
+                        st.success(f"✅ キャリブレーター登録完了: {lot_name} / {n_levels}レベル × n={n_reps}")
 
-                            df_item = profile_df[profile_df["項目名"] == tc_item_tab4]
+                st.divider()
 
-                            def calc_rate(time_start, time_end):
-                                rates = {}
-                                for sid, gdf in df_item.groupby("依頼No."):
-                                    gdf_sorted = gdf.sort_values("時間")
-                                    t_vals = gdf_sorted["時間"].values
-                                    a_vals = gdf_sorted["吸光度"].values
+                # ============================================================
+                # Step 2: 測光区間 & 検量線モード設定
+                # ============================================================
+                st.subheader("Step 2: 測光区間 & 検量線モード設定")
 
-                                    idx_s = np.argmin(np.abs(t_vals - time_start))
-                                    idx_e = np.argmin(np.abs(t_vals - time_end))
+                if st.session_state["cal_config"] is None:
+                    st.info("先に Step 1 でキャリブレーターを登録してください。")
+                else:
+                    cal_cfg = st.session_state["cal_config"]
+                    times = sorted(profile_df[profile_df["項目名"] == tc_item_tab4]["時間"].unique())
+                    time_opts = {f"{t:.1f}s": t for t in times}
+                    time_keys = list(time_opts.keys())
 
-                                    t_s, a_s = t_vals[idx_s], a_vals[idx_s]
-                                    t_e, a_e = t_vals[idx_e], a_vals[idx_e]
+                    st.info("計算式: 処理値(mAbs/min) = {(Abs_end - Abs_start) × 0.1} / {(Time_end - Time_start) / 60}")
 
-                                    if t_e != t_s:
-                                        rate = ((a_e - a_s) * 0.1) / ((t_e - t_s) / 60.0)
-                                        rates[str(sid)] = rate
-                                return rates
+                    n_patterns = st.number_input("比較パターン数", min_value=1, max_value=6, value=2, key="n_patterns")
 
-                            base_t_s = time_opts[base_start_name]
-                            base_t_e = time_opts[base_end_name]
-                            new_t_s = time_opts[new_start_name]
-                            new_t_e = time_opts[new_end_name]
+                    pattern_defs = []
+                    cols = st.columns(min(int(n_patterns), 3))
+                    for i in range(int(n_patterns)):
+                        with cols[i % len(cols)]:
+                            st.markdown(f"**パターン {i+1}**")
+                            pname = st.text_input("名称", value="Base" if i == 0 else f"New-{chr(64+i)}", key=f"pname_{i}")
+                            pstart = st.selectbox("開始時間", options=time_keys, index=min(9, len(time_keys)-1), key=f"pstart_{i}")
+                            pend = st.selectbox("終了時間", options=time_keys, index=min(19, len(time_keys)-1), key=f"pend_{i}")
+                            pcurve = st.selectbox("検量線モード", ["piecewise_linear", "spline"],
+                                                  format_func=lambda x: "折れ線" if x == "piecewise_linear" else "スプライン", key=f"pcurve_{i}")
+                            pattern_defs.append({
+                                "name": pname,
+                                "time_start": time_opts[pstart],
+                                "time_end": time_opts[pend],
+                                "curve_mode": pcurve,
+                            })
 
-                            base_rates = calc_rate(base_t_s, base_t_e)
-                            new_rates = calc_rate(new_t_s, new_t_e)
+                    if st.button("▶ Step 2 完了: 検量線を構築 & 全検体再計算", type="primary", key="btn_build_curves"):
+                        with st.spinner("検量線構築 & 全検体再計算中..."):
+                            cal_cfg = st.session_state["cal_config"]
+                            level_table = cal_cfg["level_table"]
+                            concentrations = cal_cfg["concentrations"]
+                            agg = cal_cfg["aggregation"]
 
-                            cal_base_rates = [base_rates.get(cid, np.nan) for cid in cal_ids]
-                            cal_new_rates = [new_rates.get(cid, np.nan) for cid in cal_ids]
+                            all_pattern_results = []
 
-                            # Filter out missing cals for New and Base
-                            valid_new_cals = [(r_new, c) for r_new, c in zip(cal_new_rates, cal_concs) if not np.isnan(r_new)]
-                            valid_base_cals = [(r_base, c) for r_base, c in zip(cal_base_rates, cal_concs) if not np.isnan(r_base)]
+                            for pat in pattern_defs:
+                                # 全サンプルの処理値(Rate)算出
+                                rates = calc_rates_batch(profile_df, tc_item_tab4, pat["time_start"], pat["time_end"])
 
-                            if len(valid_new_cals) < 2 or len(valid_base_cals) < 2:
-                                st.error("有効なキャリブレーターデータが不足しています。")
+                                # Calレベル代表値の集約
+                                cal_agg_rates = aggregate_cal_rates(rates, level_table, method=agg)
+
+                                # 検量線構築
+                                curve = build_calibration_curve(cal_agg_rates, concentrations, curve_mode=pat["curve_mode"])
+
+                                # Cal ID → 表示値濃度 マッピング
+                                cal_id_to_conc = {}
+                                for lv_idx, ids in enumerate(level_table):
+                                    for cid in ids:
+                                        if cid and lv_idx < len(concentrations):
+                                            cal_id_to_conc[cid] = concentrations[lv_idx]
+
+                                # 全検体再計算
+                                if curve is not None:
+                                    recalc_df = recalculate_all_samples(
+                                        profile_df, measurement_df, tc_item_tab4,
+                                        curve, pat["time_start"], pat["time_end"],
+                                        cal_id_to_conc=cal_id_to_conc
+                                    )
+                                else:
+                                    recalc_df = pd.DataFrame()
+
+                                # Calの詳細テーブル & サマリーテーブル
+                                detail_df = get_cal_level_detail_table(rates, level_table, concentrations, tc_item_tab4)
+                                summary_df = get_cal_level_summary_table(rates, level_table, concentrations, agg_method=agg)
+
+                                all_pattern_results.append({
+                                    "pattern": pat,
+                                    "rates": rates,
+                                    "cal_agg_rates": cal_agg_rates,
+                                    "curve": curve,
+                                    "recalc_df": recalc_df,
+                                    "detail_df": detail_df,
+                                    "summary_df": summary_df,
+                                    "cal_id_to_conc": cal_id_to_conc,
+                                })
+
+                            st.session_state["cal_results"] = all_pattern_results
+                            st.session_state["cal_patterns"] = pattern_defs
+                            st.success(f"✅ {len(pattern_defs)}パターンの検量線構築 & 再計算が完了しました。")
+
+                st.divider()
+
+                # ============================================================
+                # Step 3: 結果表示 (方式検討: 区間・検量線比較)
+                # ============================================================
+                st.subheader("Step 3: 結果表示 (測光区間 & 検量線方式の検討)")
+
+                if st.session_state["cal_results"] is None:
+                    st.info("先に Step 2 で検量線構築 & 再計算を実行してください。")
+                else:
+                    cal_cfg = st.session_state["cal_config"]
+                    results = st.session_state["cal_results"]
+                    patterns = st.session_state["cal_patterns"]
+
+                    # 単位取得
+                    unit = ""
+                    parsed_dir = st.session_state.get("parsed_dir")
+                    if parsed_dir and (Path(parsed_dir) / "metadata.json").exists():
+                        try:
+                            with open(Path(parsed_dir) / "metadata.json", "r", encoding="utf-8") as f:
+                                disk_metadata = json.load(f)
+                            if "measurement_units" in disk_metadata and tc_item_tab4 in disk_metadata["measurement_units"]:
+                                unit = f" ({disk_metadata['measurement_units'][tc_item_tab4]})"
+                        except Exception:
+                            pass
+
+                    # --- 3a: 検量線プロット（全パターン重ね描き）---
+                    st.markdown("#### ① 検量線プロット比較")
+                    fig_cal, ax_cal = plt.subplots(figsize=(10, 6))
+                    pat_colors = plt.cm.tab10(np.linspace(0, 1, max(len(results), 1)))
+
+                    for idx, res in enumerate(results):
+                        pat = res["pattern"]
+                        curve = res["curve"]
+                        cal_agg = res["cal_agg_rates"]
+                        concs = cal_cfg["concentrations"]
+                        color = pat_colors[idx]
+                        label_prefix = pat["name"]
+                        mode_str = "折れ線" if pat["curve_mode"] == "piecewise_linear" else "スプライン"
+
+                        # Cal代表値の散布
+                        valid_pairs = [(r, c) for r, c in zip(cal_agg, concs) if np.isfinite(r) and np.isfinite(c)]
+                        if valid_pairs:
+                            vr, vc = zip(*valid_pairs)
+                            ax_cal.scatter(vc, vr, color=color, marker="o", s=60, zorder=5,
+                                           label=f"{label_prefix} Cal点")
+
+                        # 検量線カーブ
+                        if curve is not None:
+                            c_arr = curve["concentrations"]
+                            r_arr = curve["rates"]
+                            if curve["curve_mode"] == "piecewise_linear":
+                                ax_cal.plot(c_arr, r_arr, color=color, linewidth=1.8, alpha=0.8,
+                                            label=f"{label_prefix} ({mode_str})")
                             else:
-                                valid_new_cals.sort(key=lambda x: x[0])
-                                x_cals_new = np.array([x[0] for x in valid_new_cals])
-                                y_cals_new = np.array([x[1] for x in valid_new_cals])
+                                dense_r = np.linspace(r_arr.min(), r_arr.max(), 200)
+                                dense_c = [predict_concentration(curve, rv) for rv in dense_r]
+                                ax_cal.plot(dense_c, dense_r, color=color, linewidth=1.8, linestyle="--", alpha=0.8,
+                                            label=f"{label_prefix} ({mode_str})")
 
-                                valid_base_cals.sort(key=lambda x: x[0])
-                                x_cals_base = np.array([x[0] for x in valid_base_cals])
-                                y_cals_base = np.array([x[1] for x in valid_base_cals])
+                    ax_cal.set_xlabel(f"濃度{unit}")
+                    ax_cal.set_ylabel("処理値 (mAbs/min)")
+                    ax_cal.set_title(f"検量線比較: {tc_item_tab4} [{cal_cfg['lot_name']}]")
+                    ax_cal.grid(True, alpha=0.3)
+                    ax_cal.legend(fontsize=8, loc="best")
+                    st.pyplot(fig_cal)
+                    plt.close(fig_cal)
 
-                                def predict_new(x_val):
-                                    if np.isnan(x_val): return np.nan
-                                    if curve_mode_new == "piecewise_linear":
-                                        return float(np.interp(x_val, x_cals_new, y_cals_new))
-                                    else:
-                                        f = interp1d(x_cals_new, y_cals_new, kind='cubic', fill_value="extrapolate")
-                                        return float(f(x_val))
+                    # --- 3b: Calレベル詳細テーブル & CV% サマリー ---
+                    st.markdown("#### ② キャリブレーター処理値 & ばらつき (CV%)")
+                    for idx, res in enumerate(results):
+                        pat = res["pattern"]
+                        detail_df = res["detail_df"]
+                        summary_df = res.get("summary_df", pd.DataFrame())
 
-                                def predict_base(x_val):
-                                    if np.isnan(x_val): return np.nan
-                                    if curve_mode_base == "piecewise_linear":
-                                        return float(np.interp(x_val, x_cals_base, y_cals_base))
-                                    else:
-                                        f = interp1d(x_cals_base, y_cals_base, kind='cubic', fill_value="extrapolate")
-                                        return float(f(x_val))
+                        with st.expander(f"📋 パターン: {pat['name']} ({pat['time_start']:.1f}s ~ {pat['time_end']:.1f}s)", expanded=(idx == 0)):
+                            st.markdown("**【レベル別サマリー（代表値・平均値・標準偏差・CV%）】**")
+                            st.dataframe(summary_df, use_container_width=True)
 
-                                cal_id_to_conc = dict(zip(cal_ids, cal_concs))
+                            if not detail_df.empty:
+                                st.markdown("**【個別測定値一覧（Replicates）】**")
+                                st.dataframe(detail_df, use_container_width=True)
 
-                                # 乖離レベル判定準備
-                                ref_outlier_map = st.session_state.get("ref_outlier_map")
-                                metadata_session = st.session_state.get("metadata_enhanced") or st.session_state.get("metadata")
-                                id_col_session = st.session_state.get("id_col", "SID")
-                                id_mapping = {}
-                                if id_col_session and id_col_session != "依頼No." and id_col_session in measurement_df.columns:
-                                    for _, r_row in measurement_df.iterrows():
-                                        rid_str = str(r_row.get("依頼No.", ""))
-                                        sid_str = str(r_row.get(id_col_session, ""))
-                                        if rid_str and sid_str:
-                                            id_mapping[rid_str] = sid_str
+                    # --- 3c: 全検体再計算結果テーブル ---
+                    st.markdown("#### ③ 全検体再計算結果マトリクス")
 
-                                def get_sample_outlier_level(sid_raw):
-                                    sid_str = str(sid_raw)
-                                    mapped_id = id_mapping.get(sid_str, sid_str)
-                                    if ref_outlier_map and mapped_id in ref_outlier_map:
-                                        return ref_outlier_map[mapped_id]
-                                    if metadata_session and mapped_id in metadata_session and "outliers" in metadata_session[mapped_id]:
-                                        levels = [v["level"] for v in metadata_session[mapped_id]["outliers"].values()]
-                                        if "strong_candidate" in levels: return "strong_candidate"
-                                        if "candidate" in levels: return "candidate"
-                                        if "mild_candidate" in levels: return "mild_candidate"
-                                    return "none"
+                    # Merge all pattern results into a single wide table
+                    if len(results) > 0 and not results[0]["recalc_df"].empty:
+                        base_df = results[0]["recalc_df"][["依頼No.", "サンプル区分", "装置測定値"]].copy()
 
-                                level_label_map = {
-                                    "strong_candidate": "強乖離",
-                                    "candidate": "乖離",
-                                    "mild_candidate": "軽度乖離",
-                                    "none": "非乖離"
+                        for idx, res in enumerate(results):
+                            pat = res["pattern"]
+                            rdf = res["recalc_df"]
+                            if not rdf.empty:
+                                base_df = base_df.merge(
+                                    rdf[["依頼No.", "処理値", "再計算濃度"]].rename(columns={
+                                        "処理値": f"処理値_{pat['name']}",
+                                        "再計算濃度": f"再計算濃度_{pat['name']}",
+                                    }),
+                                    on="依頼No.", how="left"
+                                )
+
+                        # 濃度差列の追加（Baseとの差）
+                        if len(results) >= 2:
+                            base_col = f"再計算濃度_{results[0]['pattern']['name']}"
+                            for idx in range(1, len(results)):
+                                new_col = f"再計算濃度_{results[idx]['pattern']['name']}"
+                                diff_col = f"濃度差_{results[idx]['pattern']['name']}-{results[0]['pattern']['name']}"
+                                if base_col in base_df.columns and new_col in base_df.columns:
+                                    base_df[diff_col] = base_df[new_col] - base_df[base_col]
+
+                        st.dataframe(base_df, use_container_width=True)
+                        st.session_state["recalc_matrix_df"] = base_df
+
+                    # --- 3d: 相関プロット（パターン間比較） ---
+                    if len(results) >= 2:
+                        st.markdown("#### ④ 相関プロット: 測光パターン間比較")
+
+                        base_res = results[0]
+                        base_pat_name = base_res["pattern"]["name"]
+
+                        for cmp_idx in range(1, len(results)):
+                            cmp_res = results[cmp_idx]
+                            cmp_pat_name = cmp_res["pattern"]["name"]
+
+                            base_rdf = base_res["recalc_df"]
+                            cmp_rdf = cmp_res["recalc_df"]
+
+                            if base_rdf.empty or cmp_rdf.empty:
+                                continue
+
+                            # 一般検体のみ（キャリブレーター除外）
+                            merged = base_rdf[base_rdf["サンプル区分"] == "一般検体"][["依頼No.", "再計算濃度"]].rename(
+                                columns={"再計算濃度": "base_conc"}
+                            ).merge(
+                                cmp_rdf[cmp_rdf["サンプル区分"] == "一般検体"][["依頼No.", "再計算濃度"]].rename(
+                                    columns={"再計算濃度": "cmp_conc"}
+                                ),
+                                on="依頼No.", how="inner"
+                            ).dropna(subset=["base_conc", "cmp_conc"])
+
+                            if len(merged) < 2:
+                                st.warning(f"{base_pat_name} vs {cmp_pat_name}: 有効なデータが不足しています。")
+                                continue
+
+                            corr_x = merged["base_conc"].values.astype(float)
+                            corr_y = merged["cmp_conc"].values.astype(float)
+
+                            corr_r = pearson_r(corr_x, corr_y)
+                            corr_a, corr_b, corr_fi = regression_fit_info(corr_x, corr_y, method="PassingBablok")
+
+                            fig_corr, ax_corr = plt.subplots(figsize=(8, 8))
+                            ax_corr.scatter(corr_x, corr_y, color="steelblue", s=30, alpha=0.7, zorder=5)
+
+                            # y=x 線
+                            lo = min(float(np.nanmin(corr_x)), float(np.nanmin(corr_y)))
+                            hi = max(float(np.nanmax(corr_x)), float(np.nanmax(corr_y)))
+                            margin = (hi - lo) * 0.05 if hi > lo else 1.0
+                            ax_corr.plot([lo - margin, hi + margin], [lo - margin, hi + margin],
+                                         "--", lw=1, alpha=0.6, color="gray", label="y=x")
+
+                            # 回帰直線
+                            if np.isfinite(corr_a) and np.isfinite(corr_b):
+                                xx_line = np.array([lo - margin, hi + margin])
+                                ax_corr.plot(xx_line, corr_a * xx_line + corr_b,
+                                             lw=1.8, alpha=0.85, color="darkorange", label="回帰直線")
+
+                            # 統計情報テキスト
+                            stat_lines = [
+                                f"n={len(merged)}",
+                                f"Pearson r={corr_r:.4f}",
+                                f"Passing-Bablok",
+                                f"y={corr_a:.4f}x+{corr_b:.4f}",
+                            ]
+                            sl_ci_lo = corr_fi.get("slope_ci_low", np.nan)
+                            sl_ci_hi = corr_fi.get("slope_ci_high", np.nan)
+                            ic_ci_lo = corr_fi.get("intercept_ci_low", np.nan)
+                            ic_ci_hi = corr_fi.get("intercept_ci_high", np.nan)
+                            if np.isfinite(sl_ci_lo) and np.isfinite(sl_ci_hi):
+                                stat_lines.append(f"slope 95%CI [{sl_ci_lo:.4f}, {sl_ci_hi:.4f}]")
+                            if np.isfinite(ic_ci_lo) and np.isfinite(ic_ci_hi):
+                                stat_lines.append(f"intercept 95%CI [{ic_ci_lo:.4f}, {ic_ci_hi:.4f}]")
+
+                            ax_corr.text(0.03, 0.97, "\n".join(stat_lines), transform=ax_corr.transAxes,
+                                         va="top", fontsize=9,
+                                         bbox=dict(boxstyle="round", facecolor="white", alpha=0.75))
+
+                            ax_corr.set_xlabel(f"{base_pat_name} 再計算濃度{unit}")
+                            ax_corr.set_ylabel(f"{cmp_pat_name} 再計算濃度{unit}")
+                            ax_corr.set_title(f"相関プロット: {base_pat_name} vs {cmp_pat_name}")
+                            ax_corr.set_aspect("equal", adjustable="datalim")
+                            ax_corr.grid(True, alpha=0.25)
+                            ax_corr.legend(fontsize=8, loc="lower right")
+                            st.pyplot(fig_corr)
+                            plt.close(fig_corr)
+
+                    st.divider()
+
+                    # ============================================================
+                    # Step 4: ロット差検討 (異なるCalロット間での検量線・実検体比較)
+                    # ============================================================
+                    st.subheader("Step 4: ロット差検討（異なるCalロット間での実検体・コントロール比較）")
+                    st.markdown("""
+                    保存された別のCalロット設定ファイル（JSON）を選択し、同一の測光区間を用いて検量線・実検体濃度のロット間測定値差を比較します。
+                    """)
+
+                    parsed_dir = st.session_state.get("parsed_dir")
+                    available_lot_jsons = []
+                    if parsed_dir:
+                        available_lot_jsons = sorted(list(Path(parsed_dir).glob(f"cal_config_{tc_item_tab4}_*.json")))
+                        if not available_lot_jsons:
+                            available_lot_jsons = sorted(list(Path(parsed_dir).glob("cal_config_*.json")))
+
+                    if len(available_lot_jsons) < 1 and not st.session_state.get("cal_config"):
+                        st.info("※ ロット差検討を行うには、Step 1でCal設定を保存して、少なくとも1つ以上のCal設定JSONを作成してください。")
+                    else:
+                        col_lota, col_lotb = st.columns(2)
+                        with col_lota:
+                            st.markdown(f"**基準ロット (Lot-A)**: `{cal_cfg['lot_name']}` (現在の設定)")
+                        with col_lotb:
+                            lot_options = {p.name: p for p in available_lot_jsons}
+                            selected_compare_json = st.selectbox(
+                                "比較対照ロット (Lot-B) の設定JSONを選択",
+                                options=list(lot_options.keys()),
+                                key="sel_compare_lot_json"
+                            )
+
+                        # 比較に用いる測光区間 (パターン1を使用)
+                        base_pat = patterns[0]
+                        st.caption(f"※ 比較に使用する測光区間: `{base_pat['name']}` ({base_pat['time_start']:.1f}s ~ {base_pat['time_end']:.1f}s, {base_pat['curve_mode']})")
+
+                        if st.button("🔬 ロット差を比較解析", type="primary", key="btn_compare_lots"):
+                            with st.spinner("ロット比較解析中..."):
+                                compare_cfg = load_cal_config(lot_options[selected_compare_json])
+                                lot_b_name = compare_cfg.get("lot_name", "Lot-B")
+
+                                # Lot A (Current) の検量線 & 再計算結果 (パターン1)
+                                res_a = results[0]
+                                curve_a = res_a["curve"]
+                                recalc_a = res_a["recalc_df"]
+
+                                # Lot B の検量線 & 再計算結果
+                                rates_b = calc_rates_batch(profile_df, tc_item_tab4, base_pat["time_start"], base_pat["time_end"])
+                                b_level_table = [[cid for cid in lv.get("ids", [])] for lv in compare_cfg.get("levels", [])]
+                                b_concs = compare_cfg.get("concentrations", [])
+                                b_agg_rates = aggregate_cal_rates(rates_b, b_level_table, method=compare_cfg.get("aggregation", "median"))
+                                curve_b = build_calibration_curve(b_agg_rates, b_concs, curve_mode=base_pat["curve_mode"])
+
+                                cal_b_map = {}
+                                for lv_i, cids in enumerate(b_level_table):
+                                    for cid in cids:
+                                        if cid and lv_i < len(b_concs):
+                                            cal_b_map[cid] = b_concs[lv_i]
+
+                                recalc_b = recalculate_all_samples(
+                                    profile_df, measurement_df, tc_item_tab4,
+                                    curve_b, base_pat["time_start"], base_pat["time_end"],
+                                    cal_id_to_conc=cal_b_map
+                                )
+
+                                # マージ & 差分算出
+                                lot_cmp_df = compare_two_recalc_results(recalc_a, recalc_b, label_a=cal_cfg['lot_name'], label_b=lot_b_name)
+                                st.session_state["lot_comparison_data"] = {
+                                    "lot_a_name": cal_cfg['lot_name'],
+                                    "lot_b_name": lot_b_name,
+                                    "curve_a": curve_a,
+                                    "curve_b": curve_b,
+                                    "b_concs": b_concs,
+                                    "b_agg_rates": b_agg_rates,
+                                    "lot_cmp_df": lot_cmp_df,
                                 }
+                                st.success(f"✅ ロット比較完了: {cal_cfg['lot_name']} vs {lot_b_name}")
 
-                                results = []
-                                for sid in base_rates.keys():
-                                    b_r = base_rates[sid]
-                                    n_r = new_rates[sid]
-                                    
-                                    if is_calibrator(sid):
-                                        orig_conc = cal_id_to_conc.get(sid, np.nan)
-                                        outlier_status = "キャリブレーター"
-                                    else:
-                                        m_row = measurement_df[measurement_df["依頼No."].astype(str) == sid]
-                                        if not m_row.empty:
-                                            orig_conc = pd.to_numeric(m_row.iloc[0].get(tc_item_tab4, np.nan), errors='coerce')
-                                        else:
-                                            orig_conc = np.nan
-                                        outlier_status = level_label_map.get(get_sample_outlier_level(sid), "非乖離")
+                        # ロット比較結果の表示
+                        if st.session_state.get("lot_comparison_data"):
+                            lcd = st.session_state["lot_comparison_data"]
+                            la_name = lcd["lot_a_name"]
+                            lb_name = lcd["lot_b_name"]
+                            cmp_df = lcd["lot_cmp_df"]
 
-                                    # Base検量線で再計算した濃度（プロット用）
-                                    base_recalc_conc = predict_base(b_r)
-                                    new_conc = predict_new(n_r)
-                                    results.append({
-                                        "依頼No.": sid,
-                                        "乖離判定": outlier_status,
-                                        "元の処理値 (Base)": b_r,
-                                        "新たな処理値 (New)": n_r,
-                                        "装置測定値": orig_conc,
-                                        "Base再計算濃度": base_recalc_conc,
-                                        "New予測濃度": new_conc,
-                                        "濃度差 (New - Base)": new_conc - base_recalc_conc if not np.isnan(base_recalc_conc) else np.nan
-                                    })
+                            st.markdown(f"#### ① 検量線の重ね描き比較 ({la_name} vs {lb_name})")
+                            fig_lot, ax_lot = plt.subplots(figsize=(10, 6))
 
-                                res_df = pd.DataFrame(results)
+                            # Lot A
+                            c_a = lcd["curve_a"]
+                            if c_a:
+                                ax_lot.scatter(c_a["concentrations"], c_a["rates"], color="blue", marker="o", s=60, label=f"{la_name} Cal点")
+                                ax_lot.plot(c_a["concentrations"], c_a["rates"], color="blue", lw=1.8, label=f"{la_name} 検量線")
 
-                                # 単位の取得
-                                unit = ""
+                            # Lot B
+                            c_b = lcd["curve_b"]
+                            if c_b:
+                                ax_lot.scatter(c_b["concentrations"], c_b["rates"], color="red", marker="^", s=60, label=f"{lb_name} Cal点")
+                                ax_lot.plot(c_b["concentrations"], c_b["rates"], color="red", lw=1.8, linestyle="--", label=f"{lb_name} 検量線")
+
+                            ax_lot.set_xlabel(f"濃度{unit}")
+                            ax_lot.set_ylabel("処理値 (mAbs/min)")
+                            ax_lot.set_title(f"検量線ロット間比較: {la_name} vs {lb_name}")
+                            ax_lot.grid(True, alpha=0.3)
+                            ax_lot.legend(fontsize=8, loc="best")
+                            st.pyplot(fig_lot)
+                            plt.close(fig_lot)
+
+                            # 相関 & Bland-Altman
+                            st.markdown(f"#### ② 実検体・コントロール測定値のロット間相関 & Bland-Altman")
+                            sample_cmp = cmp_df[cmp_df["サンプル区分"] == "一般検体"].dropna(subset=[f"濃度_{la_name}", f"濃度_{lb_name}"])
+
+                            if len(sample_cmp) >= 2:
+                                x_lot = sample_cmp[f"濃度_{la_name}"].values.astype(float)
+                                y_lot = sample_cmp[f"濃度_{lb_name}"].values.astype(float)
+
+                                col_c1, col_c2 = st.columns(2)
+
+                                with col_c1:
+                                    # 相関プロット
+                                    r_lot = pearson_r(x_lot, y_lot)
+                                    a_lot, b_lot, fi_lot = regression_fit_info(x_lot, y_lot, method="PassingBablok")
+
+                                    fig_lc, ax_lc = plt.subplots(figsize=(7, 7))
+                                    ax_lc.scatter(x_lot, y_lot, color="purple", s=35, alpha=0.75, zorder=5)
+
+                                    lo_l = min(float(np.nanmin(x_lot)), float(np.nanmin(y_lot)))
+                                    hi_l = max(float(np.nanmax(x_lot)), float(np.nanmax(y_lot)))
+                                    mar_l = (hi_l - lo_l) * 0.05 if hi_l > lo_l else 1.0
+                                    ax_lc.plot([lo_l - mar_l, hi_l + mar_l], [lo_l - mar_l, hi_l + mar_l], "--", lw=1, color="gray", label="y=x")
+
+                                    if np.isfinite(a_lot) and np.isfinite(b_lot):
+                                        xx_l = np.array([lo_l - mar_l, hi_l + mar_l])
+                                        ax_lc.plot(xx_l, a_lot * xx_l + b_lot, lw=1.8, color="darkorange", label="Passing-Bablok")
+
+                                    stat_t = f"n={len(sample_cmp)}\nr={r_lot:.4f}\ny={a_lot:.4f}x+{b_lot:.4f}"
+                                    ax_lc.text(0.03, 0.97, stat_t, transform=ax_lc.transAxes, va="top", fontsize=9,
+                                               bbox=dict(boxstyle="round", facecolor="white", alpha=0.75))
+                                    ax_lc.set_xlabel(f"{la_name} 濃度{unit}")
+                                    ax_lc.set_ylabel(f"{lb_name} 濃度{unit}")
+                                    ax_lc.set_title(f"相関: {la_name} vs {lb_name}")
+                                    ax_lc.grid(True, alpha=0.25)
+                                    ax_lc.legend(fontsize=8, loc="lower right")
+                                    st.pyplot(fig_lc)
+                                    plt.close(fig_lc)
+
+                                with col_c2:
+                                    # Bland-Altman プロット
+                                    mean_lot = (x_lot + y_lot) / 2.0
+                                    diff_lot = y_lot - x_lot
+                                    bias_lot = float(np.nanmean(diff_lot))
+                                    sd_lot = float(np.nanstd(diff_lot, ddof=1)) if len(diff_lot) > 1 else np.nan
+                                    loa_hi_l = bias_lot + 1.96 * sd_lot if np.isfinite(sd_lot) else np.nan
+                                    loa_lo_l = bias_lot - 1.96 * sd_lot if np.isfinite(sd_lot) else np.nan
+
+                                    fig_ba, ax_ba = plt.subplots(figsize=(7, 7))
+                                    ax_ba.scatter(mean_lot, diff_lot, color="teal", s=35, alpha=0.75, zorder=5)
+                                    ax_ba.axhline(bias_lot, color="black", lw=1.5, label=f"平均差={bias_lot:.3f}")
+                                    if np.isfinite(loa_hi_l) and np.isfinite(loa_lo_l):
+                                        ax_ba.axhline(loa_hi_l, color="gray", lw=1.2, ls="--", label=f"+1.96SD={loa_hi_l:.3f}")
+                                        ax_ba.axhline(loa_lo_l, color="gray", lw=1.2, ls="--", label=f"-1.96SD={loa_lo_l:.3f}")
+
+                                    ax_ba.set_xlabel(f"平均濃度 (({la_name}+{lb_name})/2){unit}")
+                                    ax_ba.set_ylabel(f"差 ({lb_name} - {la_name}){unit}")
+                                    ax_ba.set_title(f"Bland–Altman: {lb_name} - {la_name}")
+                                    ax_ba.grid(True, alpha=0.25)
+                                    ax_ba.legend(fontsize=8, loc="best")
+                                    st.pyplot(fig_ba)
+                                    plt.close(fig_ba)
+
+                            st.markdown("#### ③ ロット間濃度差テーブル")
+                            st.dataframe(cmp_df, use_container_width=True)
+
+                    st.divider()
+
+                    # ============================================================
+                    # Step 5: Excelレポート出力
+                    # ============================================================
+                    st.subheader("Step 5: Excelレポート出力")
+                    st.markdown("再計算結果マトリクス、Calサマリー、Cal詳細、ロット差検討結果をまとめたExcelファイルを生成します。")
+
+                    if st.button("📊 Excelレポートを生成", type="primary", key="btn_export_cal_excel"):
+                        with st.spinner("Excelファイル作成中..."):
+                            try:
                                 parsed_dir = st.session_state.get("parsed_dir")
-                                if parsed_dir and (parsed_dir / "metadata.json").exists():
-                                    try:
-                                        import json
-                                        with open(parsed_dir / "metadata.json", "r", encoding="utf-8") as f:
-                                            disk_metadata = json.load(f)
-                                        if "measurement_units" in disk_metadata:
-                                            unit_dict = disk_metadata["measurement_units"]
-                                            if tc_item_tab4 in unit_dict:
-                                                unit = f" ({unit_dict[tc_item_tab4]})"
-                                    except Exception as e:
-                                        st.warning(f"metadata.jsonの読み込みに失敗しました: {e}")
-                                elif st.session_state.get("metadata") and "measurement_units" in st.session_state["metadata"]:
-                                    unit_dict = st.session_state["metadata"]["measurement_units"]
-                                    if tc_item_tab4 in unit_dict:
-                                        unit = f" ({unit_dict[tc_item_tab4]})"
+                                dirs = make_output_dirs(OUTPUT_ROOT, input_stem=f"CalAnalysis_{tc_item_tab4}_{cal_cfg['lot_name']}")
+                                out_xlsx = dirs["excel"] / f"CalAnalysis_{tc_item_tab4}_{cal_cfg['lot_name']}.xlsx"
 
-                                # Valid base cals for plotting (sorted by conc)
-                                valid_base_cals_plot = [(r_base, c) for r_base, c in zip(cal_base_rates, cal_concs) if not np.isnan(r_base)]
-                                valid_base_cals_plot.sort(key=lambda x: x[1])
-                                x_base_cals_plot = np.array([x[1] for x in valid_base_cals_plot]) # Conc
-                                y_base_cals_plot = np.array([x[0] for x in valid_base_cals_plot]) # Rate
+                                with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
+                                    # Sheet 1: 再計算マトリクス
+                                    if "recalc_matrix_df" in st.session_state:
+                                        st.session_state["recalc_matrix_df"].to_excel(writer, sheet_name="再計算マトリクス", index=False)
 
-                                # Valid new cals for plotting (sorted by conc)
-                                valid_new_cals_plot = [(r_new, c) for r_new, c in zip(cal_new_rates, cal_concs) if not np.isnan(r_new)]
-                                valid_new_cals_plot.sort(key=lambda x: x[1])
-                                x_new_cals_plot = np.array([x[1] for x in valid_new_cals_plot]) # Conc
-                                y_new_cals_plot = np.array([x[0] for x in valid_new_cals_plot]) # Rate
+                                    # Sheet 2: Calサマリー
+                                    cal_sum_list = []
+                                    for res in results:
+                                        if "summary_df" in res:
+                                            cal_sum_list.append(res["summary_df"].assign(パターン=res["pattern"]["name"]))
+                                    if cal_sum_list:
+                                        pd.concat(cal_sum_list, ignore_index=True).to_excel(writer, sheet_name="Calサマリー", index=False)
 
-                                st.subheader("解析結果")
+                                    # Sheet 3: Cal詳細 (Replicates)
+                                    cal_det_list = []
+                                    for res in results:
+                                        if "detail_df" in res:
+                                            cal_det_list.append(res["detail_df"].assign(パターン=res["pattern"]["name"]))
+                                    if cal_det_list:
+                                        pd.concat(cal_det_list, ignore_index=True).to_excel(writer, sheet_name="Cal個別測定値", index=False)
 
-                                mode_base_str = "折れ線" if curve_mode_base == "piecewise_linear" else "スプライン"
-                                mode_new_str = "折れ線" if curve_mode_new == "piecewise_linear" else "スプライン"
+                                    # Sheet 4: ロット比較 (あれば)
+                                    if st.session_state.get("lot_comparison_data"):
+                                        st.session_state["lot_comparison_data"]["lot_cmp_df"].to_excel(writer, sheet_name="ロット間比較", index=False)
 
-                                # Plot Calibration Curve
-                                fig, ax = plt.subplots(figsize=(10, 6))
+                                st.success(f"✅ Excel保存完了: `{out_xlsx}`")
 
-                                # --- Calibrator markers (scatter) ---
-                                ax.scatter(x_base_cals_plot, y_base_cals_plot, color='gray', marker='s',
-                                           s=80, zorder=5, label="Calibrators (Base)")
-                                ax.scatter(x_new_cals_plot, y_new_cals_plot, color='black', marker='o',
-                                           s=40, zorder=6, label="Calibrators (New)")
-
-                                # --- Base calibration curve ---
-                                if curve_mode_base == "piecewise_linear":
-                                    ax.plot(x_base_cals_plot, y_base_cals_plot, color='gray',
-                                            linestyle='-', linewidth=2, alpha=0.8, zorder=3,
-                                            label=f"Cal Curve (Base: {mode_base_str})")
-                                else:
-                                    rate_dense_base = np.linspace(y_base_cals_plot.min(), y_base_cals_plot.max(), 200)
-                                    conc_dense_base = [predict_base(r) for r in rate_dense_base]
-                                    ax.plot(conc_dense_base, rate_dense_base, color='gray',
-                                            linestyle='--', linewidth=2, alpha=0.8, zorder=3,
-                                            label=f"Cal Curve (Base: {mode_base_str})")
-
-                                # --- New calibration curve ---
-                                if curve_mode_new == "piecewise_linear":
-                                    ax.plot(x_new_cals_plot, y_new_cals_plot, color='red',
-                                            linestyle='-', linewidth=1.5, alpha=0.8, zorder=4,
-                                            label=f"Cal Curve (New: {mode_new_str})")
-                                else:
-                                    rate_dense_new = np.linspace(y_new_cals_plot.min(), y_new_cals_plot.max(), 200)
-                                    conc_dense_new = [predict_new(r) for r in rate_dense_new]
-                                    ax.plot(conc_dense_new, rate_dense_new, color='red',
-                                            linestyle='--', linewidth=1.5, alpha=0.8, zorder=4,
-                                            label=f"Cal Curve (New: {mode_new_str})")
-
-                                # --- Plot samples (Base) - predict_base で再計算した濃度を使用 ---
-                                sample_x_base = [r["Base再計算濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["Base再計算濃度"])]
-                                sample_y_base = [r["元の処理値 (Base)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["Base再計算濃度"])]
-                                if sample_x_base:
-                                    ax.scatter(sample_x_base, sample_y_base, color='gray', alpha=0.4,
-                                               zorder=7, label="Samples (Base)")
-
-                                # --- Plot samples (New) ---
-                                if show_tc_outliers_tab4:
-                                    level_plot_specs = [
-                                        ("none", "blue", "Samples New (非乖離)", 8, "o"),
-                                        ("mild_candidate", "gold", "Samples New (軽度乖離)", 9, "^"),
-                                        ("candidate", "orange", "Samples New (乖離)", 9, "^"),
-                                        ("strong_candidate", "red", "Samples New (強乖離)", 9, "^"),
-                                    ]
-                                    for lvl_key, col_val, lbl_val, z_val, mkr in level_plot_specs:
-                                        sub_x = [r["New予測濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"]) and get_sample_outlier_level(r["依頼No."]) == lvl_key]
-                                        sub_y = [r["新たな処理値 (New)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"]) and get_sample_outlier_level(r["依頼No."]) == lvl_key]
-                                        if sub_x:
-                                            ax.scatter(sub_x, sub_y, color=col_val, marker=mkr, alpha=0.75,
-                                                       zorder=z_val, label=lbl_val)
-                                else:
-                                    sample_x_new = [r["New予測濃度"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
-                                    sample_y_new = [r["新たな処理値 (New)"] for r in results if not is_calibrator(r["依頼No."]) and not np.isnan(r["New予測濃度"])]
-                                    if sample_x_new:
-                                        ax.scatter(sample_x_new, sample_y_new, color='blue', alpha=0.6,
-                                                   zorder=8, label="Samples (New)")
-
-                                ax.set_xlabel(f"濃度{unit}")
-                                ax.set_ylabel("処理値 (mAbs/min)")
-                                ax.set_title(f"検量線 (Base: {mode_base_str}, New: {mode_new_str})")
-                                ax.grid(True, alpha=0.3)
-                                ax.legend(fontsize=8, loc='best')
-                                st.pyplot(fig)
-                                plt.close(fig)
-
-                                # --- 相関プロット: Base再計算濃度 vs New予測濃度 ---
-                                st.subheader("相関プロット: Base濃度 vs New濃度")
-
-                                # 一般検体のみ抽出（キャリブレーター除外）
-                                corr_data = [r for r in results if not is_calibrator(r["依頼No."])
-                                             and np.isfinite(r["Base再計算濃度"]) and np.isfinite(r["New予測濃度"])]
-
-                                if len(corr_data) >= 2:
-                                    corr_x = np.array([r["Base再計算濃度"] for r in corr_data])
-                                    corr_y = np.array([r["New予測濃度"] for r in corr_data])
-
-                                    # Pearson r
-                                    from common.analysis_utils import pearson_r, regression_fit_info
-                                    corr_r = pearson_r(corr_x, corr_y)
-                                    corr_a, corr_b, corr_fi = regression_fit_info(corr_x, corr_y, method="PassingBablok")
-
-                                    fig2, ax2 = plt.subplots(figsize=(8, 8))
-
-                                    # 乖離レベル別にプロット
-                                    if show_tc_outliers_tab4:
-                                        corr_plot_specs = [
-                                            ("none", "blue", "非乖離", "o"),
-                                            ("mild_candidate", "gold", "軽度乖離", "^"),
-                                            ("candidate", "orange", "乖離", "^"),
-                                            ("strong_candidate", "red", "強乖離", "^"),
-                                        ]
-                                        for lvl_key, col_val, lbl_val, mkr in corr_plot_specs:
-                                            sx = [r["Base再計算濃度"] for r in corr_data if get_sample_outlier_level(r["依頼No."]) == lvl_key]
-                                            sy = [r["New予測濃度"] for r in corr_data if get_sample_outlier_level(r["依頼No."]) == lvl_key]
-                                            if sx:
-                                                ax2.scatter(sx, sy, color=col_val, marker=mkr, s=40, alpha=0.8, zorder=5, label=lbl_val)
-                                    else:
-                                        ax2.scatter(corr_x, corr_y, color="blue", s=40, alpha=0.7, zorder=5, label="Samples")
-
-                                    # y=x 線
-                                    lo = min(float(np.nanmin(corr_x)), float(np.nanmin(corr_y)))
-                                    hi = max(float(np.nanmax(corr_x)), float(np.nanmax(corr_y)))
-                                    margin = (hi - lo) * 0.05
-                                    ax2.plot([lo - margin, hi + margin], [lo - margin, hi + margin],
-                                             "--", lw=1, alpha=0.6, color="gray", label="y=x")
-
-                                    # 回帰直線
-                                    if np.isfinite(corr_a) and np.isfinite(corr_b):
-                                        xx_line = np.array([lo - margin, hi + margin])
-                                        ax2.plot(xx_line, corr_a * xx_line + corr_b,
-                                                 lw=1.8, alpha=0.85, color="darkorange", label="回帰直線")
-
-                                    # 統計情報テキスト
-                                    sl_ci_lo = corr_fi.get("slope_ci_low", np.nan)
-                                    sl_ci_hi = corr_fi.get("slope_ci_high", np.nan)
-                                    ic_ci_lo = corr_fi.get("intercept_ci_low", np.nan)
-                                    ic_ci_hi = corr_fi.get("intercept_ci_high", np.nan)
-                                    stat_lines = [
-                                        f"n={len(corr_data)}",
-                                        f"Pearson r={corr_r:.4f}",
-                                        f"Passing-Bablok",
-                                        f"y={corr_a:.4f}x+{corr_b:.4f}",
-                                    ]
-                                    if np.isfinite(sl_ci_lo) and np.isfinite(sl_ci_hi):
-                                        stat_lines.append(f"slope 95%CI [{sl_ci_lo:.4f}, {sl_ci_hi:.4f}]")
-                                    if np.isfinite(ic_ci_lo) and np.isfinite(ic_ci_hi):
-                                        stat_lines.append(f"intercept 95%CI [{ic_ci_lo:.4f}, {ic_ci_hi:.4f}]")
-
-                                    ax2.text(0.03, 0.97, "\n".join(stat_lines), transform=ax2.transAxes,
-                                             va="top", fontsize=9,
-                                             bbox=dict(boxstyle="round", facecolor="white", alpha=0.75))
-
-                                    ax2.set_xlabel(f"Base再計算濃度{unit}")
-                                    ax2.set_ylabel(f"New予測濃度{unit}")
-                                    ax2.set_title("相関プロット: デフォルト設定 vs 変更後設定")
-                                    ax2.set_aspect("equal", adjustable="datalim")
-                                    ax2.grid(True, alpha=0.25)
-                                    ax2.legend(fontsize=8, loc="lower right")
-                                    st.pyplot(fig2)
-                                    plt.close(fig2)
-                                else:
-                                    st.warning("相関プロットを描画するための有効なサンプルデータが不足しています。")
-
-                                st.dataframe(res_df)
+                                # ダウンロードボタン
+                                with open(out_xlsx, "rb") as f_x:
+                                    st.download_button(
+                                        label="📥 Excelファイルをダウンロード",
+                                        data=f_x.read(),
+                                        file_name=out_xlsx.name,
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        key="dl_cal_excel"
+                                    )
+                            except Exception as e:
+                                st.error(f"Excel出力エラー: {e}")
 
